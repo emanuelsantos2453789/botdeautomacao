@@ -192,8 +192,22 @@ def agendador():
 
 # FUNÇÃO PRINCIPAL
 def main():
+    # Cria a aplicação do bot com token
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # Registra todos os comandos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("metas", metas))
+    app.add_handler(CommandHandler("progresso", progresso))
+    app.add_handler(CommandHandler("atualizar", atualizar))
+    app.add_handler(CommandHandler("rotina", rotina))
     app.add_handler(CommandHandler("feedback", feedback))
+
+    # Inicia o agendador em thread separada
+    threading.Thread(target=agendador, daemon=True).start()
+
+    # Inicia o polling: o bot fica ouvindo novas mensagens
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
