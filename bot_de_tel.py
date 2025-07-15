@@ -5,16 +5,21 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from fpdf import FPDF
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 # CONFIGURAÇÕES GERAIS
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 TOKEN = os.getenv("BOT_TOKEN") or "7648555006:AAExdMVbKsCFYc4Hsp4JNXTqlD8Q2KSlhpk"
+bot = Bot(token=TOKEN)  # instancia global do Bot
+
 ARQ_METAS = "metas.json"
 ARQ_EVENTOS = "eventos.json"
 chat_ids = []
@@ -24,7 +29,8 @@ SCOPES = ["https://www.googleapis.com/auth/calendar"]
 SERVICE_ACCOUNT_FILE = "credentials.json"
 
 credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    SERVICE_ACCOUNT_FILE, scopes=SCOPES
+)
 service = build("calendar", "v3", credentials=credentials)
 CALENDAR_ID = "primary"
 
@@ -116,7 +122,11 @@ async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     progresso_total = sum(metas.values()) / (len(metas) * 100) * 100
     meta_mais_proxima = max(metas.items(), key=lambda x: x[1])[0]
-    msg = f"Resumo do dia:\n🎯 Progresso semanal: {int(progresso_total)}%\n📌 Meta mais próxima: {meta_mais_proxima}"
+    msg = (
+        f"Resumo do dia:\n"
+        f"🎯 Progresso semanal: {int(progresso_total)}%\n"
+        f"📌 Meta mais próxima: {meta_mais_proxima}"
+    )
     await update.message.reply_text(msg)
 
 # RELATÓRIO EM PDF
@@ -145,36 +155,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat.id
     if chat_id not in chat_ids:
         chat_ids.append(chat_id)
-    await update.message.reply_text("Olá! Envie /metas, /progresso, /atualizar, /rotina ou /feedback.")
+    await update.message.reply_text(
+        "Olá! Envie /metas, /progresso, /atualizar, /rotina ou /feedback."
+    )
 
-# AGENDADOR DE TAREFAS
-def agendador(app):
+# AGENDADOR DE TAREFAS (sem usar app.bot)
+def agendador():
     while True:
         agora = datetime.now()
 
-        # Feedback diário às 20:00
         if agora.strftime("%H:%M") == "20:00":
             for chat_id in chat_ids:
                 metas = carregar_metas()
                 if metas:
                     progresso_total = sum(metas.values()) / (len(metas) * 100) * 100
                     meta_mais_proxima = max(metas.items(), key=lambda x: x[1])[0]
-                    msg = f"Resumo do dia:\n🎯 Progresso semanal: {int(progresso_total)}%\n📌 Meta mais próxima: {meta_mais_proxima}"
-                    app.bot.send_message(chat_id=chat_id, text=msg)
+                    msg = (
+                        f"Resumo do dia:\n"
+                        f"🎯 Progresso semanal: {int(progresso_total)}%\n"
+                        f"📌 Meta mais próxima: {meta_mais_proxima}"
+                    )
+                    bot.send_message(chat_id=chat_id, text=msg)
             time.sleep(60)
 
-        # Enviar PDF aos domingos às 21:00
         elif agora.strftime("%A") == "Sunday" and agora.strftime("%H:%M") == "21:00":
             gerar_pdf()
             for chat_id in chat_ids:
-                app.bot.send_document(chat_id=chat_id, document=open("relatorio_semanal.pdf", "rb"))
+                bot.send_document(chat_id=chat_id, document=open("relatorio_semanal.pdf", "rb"))
             time.sleep(60)
 
-        # Backup às sextas às 18:00
         elif agora.strftime("%A") == "Friday" and agora.strftime("%H:%M") == "18:00":
             gerar_backup()
             time.sleep(60)
-
         else:
             time.sleep(30)
 
@@ -184,14 +196,4 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("metas", metas))
-    app.add_handler(CommandHandler("progresso", progresso))
-    app.add_handler(CommandHandler("atualizar", atualizar))
-    app.add_handler(CommandHandler("rotina", rotina))
-    app.add_handler(CommandHandler("feedback", feedback))
-
-    threading.Thread(target=agendador, args=(app,), daemon=True).start()
-
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+    app.add_handler(CommandHandler("
