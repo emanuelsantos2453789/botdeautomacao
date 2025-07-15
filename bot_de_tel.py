@@ -1,224 +1,103 @@
 import os
-import json
 import csv
-import logging
-import threading
-import time
-from datetime import datetime, timedelta
-
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-)
+from datetime import datetime, timezone
 from fpdf import FPDF
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# ————————————— CONFIGURAÇÕES GERAIS —————————————
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Carrega token do bot e outras configurações do ambiente
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+SERVICE_ACCOUNT_FILE = 'credentials.json'   # Nome do Secret File no Render
+SCOPES = ['https://www.googleapis.com/auth/calendar']
+CALENDAR_ID = 'primary'  # Calendário Google a usar (por exemplo)
 
-TOKEN = os.getenv("BOT_TOKEN")  # deve estar definido como variável de ambiente
-ARQ_METAS = "metas.json"
-ARQ_EVENTOS = "eventos.json"
-chat_ids = []
-
-# ————————————— GOOGLE CALENDAR API —————————————
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
-SERVICE_ACCOUNT_FILE = "credentials.json"  # coloque esse arquivo no mesmo diretório
-
+# Inicializa cliente Google Calendar
 credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES
-)
-service = build("calendar", "v3", credentials=credentials)
-CALENDAR_ID = "primary"
+    SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+calendar_service = build('calendar', 'v3', credentials=credentials)
 
-# ————————————— FUNÇÕES DE METAS —————————————
-def carregar_metas():
-    if os.path.exists(ARQ_METAS):
-        with open(ARQ_METAS, "r") as f:
-            return json.load(f)
-    return {}
+# --- Handlers Telegram ---
 
-def salvar_metas(metas):
-    with open(ARQ_METAS, "w") as f:
-        json.dump(metas, f, indent=4)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Olá! Bot iniciado. Use /eventos para listar eventos do Google Calendar.")
 
-async def metas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = update.message.text.replace("/metas", "").strip()
-    linhas = texto.split("\n")
-    metas_dict = {linha.strip(): 0 for linha in linhas if linha.strip()}
-    salvar_metas(metas_dict)
-    await update.message.reply_text("✅ Metas salvas com sucesso!")
+async def listar_eventos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Lista próximos eventos do Google Calendar
+    now = datetime.utcnow().isoformat() + 'Z'
+    events_result = calendar_service.events().list(
+        calendarId=CALENDAR_ID, timeMin=now, maxResults=5, singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    events = events_result.get('items', [])
+    if not events:
+        await update.message.reply_text("Não há próximos eventos.")
+        return
+    texto = "Próximos eventos:\n"
+    for event in events:
+        start = event['start'].get('dateTime', event['start'].get('date'))
+        summary = event.get('summary', 'Sem título')
+        texto += f"- {start}: {summary}\n"
+    await update.message.reply_text(texto)
 
-async def progresso(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    metas = carregar_metas()
-    if not metas:
-        return await update.message.reply_text("⚠️ Nenhuma meta encontrada.")
-    total = sum(metas.values())
-    maximo = len(metas) * 100
-    pct = int((total / maximo) * 100) if maximo else 0
-    linhas = [f"{m} – {v}%" for m, v in metas.items()]
-    linhas.append(f"\n📊 Progresso total: {pct}%")
-    await update.message.reply_text("\n".join(linhas))
-
-async def atualizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        _, resto = update.message.text.split(" ", 1)
-        nome, valor = resto.split(" ", 1)
-        valor = int(valor)
-        metas = carregar_metas()
-        if nome in metas:
-            metas[nome] = min(valor, 100)
-            salvar_metas(metas)
-            await update.message.reply_text(f"↪️ Meta “{nome}” atualizada para {valor}%")
-        else:
-            await update.message.reply_text("❌ Meta não encontrada.")
-    except:
-        await update.message.reply_text("❌ Formato inválido. Use: /atualizar <meta> <valor>")
-
-# ————————————— FUNÇÕES DE ROTINA & AGENDA —————————————
-async def rotina(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = update.message.text.replace("/rotina", "").strip()
-    linhas = texto.split("\n")
-    eventos = []
-    hoje = datetime.now()
-    dias = ["segunda","terça","quarta","quinta","sexta","sábado","domingo"]
-
-    for linha in linhas:
-        for idx, dia in enumerate(dias):
-            if linha.lower().startswith(dia):
-                parts = linha[len(dia):].strip().split(" ",1)
-                hora = parts[0]
-                tarefa = parts[1] if len(parts)>1 else ""
-                data = hoje + timedelta(days=(idx - hoje.weekday()) % 7)
-                data_str = data.strftime("%Y-%m-%d")
-                eventos.append({"data":data_str,"hora":hora,"tarefa":tarefa})
-                # cria no Google Calendar
-                try:
-                    hora_dt = datetime.strptime(hora, "%H:%M").time()
-                    inicio = datetime.combine(data.date(), hora_dt)
-                    fim = inicio + timedelta(hours=1)
-                    service.events().insert(
-                        calendarId=CALENDAR_ID,
-                        body={
-                            'summary': tarefa,
-                            'start': {'dateTime': inicio.isoformat(), 'timeZone': 'America/Sao_Paulo'},
-                            'end':   {'dateTime':   fim.isoformat(), 'timeZone': 'America/Sao_Paulo'},
-                        }
-                    ).execute()
-                except Exception as e:
-                    logging.warning(f"⚠️ Google Agenda: {e}")
-
-    with open(ARQ_EVENTOS, "w") as f:
-        json.dump(eventos, f, indent=4)
-
-    await update.message.reply_text("✅ Rotina salva com sucesso!")
-
-# ————————————— FEEDBACK MANUAL —————————————
-async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    metas = carregar_metas()
-    if not metas:
-        return await update.message.reply_text("⚠️ Sem metas para avaliar.")
-    total = sum(metas.values())
-    pct = int(total / (len(metas)*100) * 100)
-    melhor = max(metas.items(), key=lambda x: x[1])[0]
-    msg = (
-        f"📋 Resumo do dia:\n"
-        f"🎯 Progresso semanal: {pct}%\n"
-        f"📌 Meta mais próxima: {melhor}"
-    )
-    await update.message.reply_text(msg)
-
-# ————————————— GERAÇÃO DE PDF —————————————
-def gerar_pdf():
-    metas = carregar_metas()
+async def gerar_relatorio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Gera relatório em PDF com os próximos eventos
+    now = datetime.utcnow().isoformat() + 'Z'
+    events = calendar_service.events().list(
+        calendarId=CALENDAR_ID, timeMin=now, maxResults=10,
+        singleEvents=True, orderBy='startTime'
+    ).execute().get('items', [])
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(0, 10, "📈 Relatório Semanal de Metas", ln=True, align="C")
-    pdf.ln(5)
-    for m, v in metas.items():
-        pdf.cell(0, 10, f"• {m}: {v}%", ln=True)
-    pdf.output("relatorio_semanal.pdf")
+    pdf.set_font('Helvetica', size=12)
+    pdf.cell(0, 10, txt="Relatório de Eventos", ln=1)
+    if events:
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            summary = event.get('summary', 'Sem título')
+            pdf.cell(0, 10, txt=f"{start}: {summary}", ln=1)
+    else:
+        pdf.cell(0, 10, txt="Nenhum evento encontrado.", ln=1)
+    pdf_filename = "relatorio.pdf"
+    pdf.output(pdf_filename)
+    # Envia o PDF gerado
+    await update.message.reply_document(document=open(pdf_filename, "rb"))
 
-# ————————————— BACKUP CSV —————————————
-def gerar_backup():
-    metas = carregar_metas()
-    with open("backup.csv","w",newline="") as f:
-        w=csv.writer(f)
-        w.writerow(["Meta","Progresso"])
-        for m,v in metas.items():
-            w.writerow([m,v])
+async def backup_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Gera backup em CSV dos próximos eventos
+    now = datetime.utcnow().isoformat() + 'Z'
+    events = calendar_service.events().list(
+        calendarId=CALENDAR_ID, timeMin=now, maxResults=10,
+        singleEvents=True, orderBy='startTime'
+    ).execute().get('items', [])
+    csv_filename = "backup.csv"
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Data', 'Resumo'])
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            summary = event.get('summary', 'Sem título')
+            writer.writerow([start, summary])
+    await update.message.reply_document(document=open(csv_filename, "rb"))
 
-# ————————————— START —————————————
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cid = update.effective_chat.id
-    if cid not in chat_ids:
-        chat_ids.append(cid)
-    await update.message.reply_text(
-        "👋 Olá! Use:\n"
-        "/metas  – definir metas\n"
-        "/progresso – ver progresso\n"
-        "/atualizar – atualizar meta\n"
-        "/rotina – salvar rotina\n"
-        "/feedback – resumo diário"
-    )
+async def enviar_diario(context: ContextTypes.DEFAULT_TYPE):
+    # Exemplo de tarefa agendada diária (envia mensagem para chat ADM)
+    chat_id = int(os.environ.get("ADMIN_CHAT_ID", 0))
+    if chat_id:
+        await context.bot.send_message(chat_id, text="Lembrete diário automático.")
 
-# ————————————— AGENDADOR —————————————
-def agendador(app):
-    while True:
-        now = datetime.now()
-        h = now.strftime("%H:%M")
-        wd = now.strftime("%A")
-
-        if h == "20:00":  # feedback diário
-            for cid in chat_ids:
-                # reutiliza função de feedback
-                metas = carregar_metas()
-                if metas:
-                    total = sum(metas.values())
-                    pct = int(total / (len(metas)*100) * 100)
-                    melhor = max(metas.items(), key=lambda x: x[1])[0]
-                    app.bot.send_message(cid, 
-                        f"📋 Resumo do dia:\n🎯 Progresso semanal: {pct}%\n📌 Meta mais próxima: {melhor}"
-                    )
-            time.sleep(60)
-
-        elif wd == "Sunday" and h == "21:00":  # PDF semanal
-            gerar_pdf()
-            for cid in chat_ids:
-                app.bot.send_document(cid, open("relatorio_semanal.pdf","rb"))
-            time.sleep(60)
-
-        elif wd == "Friday" and h == "18:00":  # backup semanal
-            gerar_backup()
-            time.sleep(60)
-
-        else:
-            time.sleep(30)
-
-# ————————————— FUNÇÃO PRINCIPAL —————————————
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    # handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("metas", metas))
-    app.add_handler(CommandHandler("progresso", progresso))
-    app.add_handler(CommandHandler("atualizar", atualizar))
-    app.add_handler(CommandHandler("rotina", rotina))
-    app.add_handler(CommandHandler("feedback", feedback))
-
-    # inicia agendador em thread
-    threading.Thread(target=agendador, args=(app,), daemon=True).start()
-
-    # inicia o bot
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+# --- Configuração do Bot e Agendamentos ---
+if __name__ == '__main__':
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("eventos", listar_eventos))
+    application.add_handler(CommandHandler("relatorio", gerar_relatorio))
+    application.add_handler(CommandHandler("backup", backup_csv))
+    # Agendamento diário (usa JobQueue interno do PTB)
+    admin_chat_id = os.environ.get("ADMIN_CHAT_ID")
+    if admin_chat_id:
+        application.job_queue.run_repeating(
+            enviar_diario, interval=86400, first=10, chat_id=int(admin_chat_id)
+        )
+    application.run_polling()
