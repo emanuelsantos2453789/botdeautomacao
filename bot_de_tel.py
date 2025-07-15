@@ -196,4 +196,4 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("metas", metas))
-    app.add_handler(CommandHandler("
+    app.add_handler(CommandHandler("feedback", feedback))
