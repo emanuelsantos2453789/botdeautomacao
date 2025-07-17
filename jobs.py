@@ -60,7 +60,7 @@ def daily_feedback_job(context):
         bot.send_message(
             chat_id=int(chat_id),
             text="\n".join(msg),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode="Markdown"
         )
 
 
