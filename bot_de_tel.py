@@ -46,6 +46,10 @@ def main():
     # 3. Inicializa o bot e registra handlers
     updater = Updater(token=TOKEN, use_context=True)
     dp = updater.dispatcher
+    
+    dp.bot_data['calendar_service'] = calendar_service
+    dp.bot_data['calendar_id']      = CALENDAR_ID
+
 
     # Comandos básicos
     dp.add_handler(CommandHandler("start", start))
