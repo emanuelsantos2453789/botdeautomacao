@@ -6,7 +6,7 @@ from telegram.ext import (
     Updater,
     CommandHandler,
     MessageHandler,
-    Filters,
+    filters,
     CallbackQueryHandler,
 )
 
