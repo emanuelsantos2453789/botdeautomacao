@@ -4,7 +4,7 @@ import re
 import datetime
 import dateparser
 import logging
-import pytz # <--- ADICIONE ESTA IMPORTAÇÃO
+import pytz # MANTENHA ESTA IMPORTAÇÃO
 
 from telegram import (
     Update,
@@ -163,31 +163,35 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if state == "schedule_datetime":
         logger.info(f"Tentando parsear data/hora: '{text}'")
         try:
-            # <--- INÍCIO DAS ALTERAÇÕES AQUI ---
-            # 1. Pré-processar o texto: remover 'H' se presente
+            # 1. Pré-processar o texto: remover 'H' se presente e garantir que não há espaços extras
             processed_text = text.replace('H', '').strip()
-
-            # 2. Definir o fuso horário para a base relativa
+            logger.info(f"Texto pré-processado para dateparser: '{processed_text}'")
+            
+            # Obter o fuso horário de São Paulo
             sao_paulo_tz = pytz.timezone('America/Sao_Paulo')
             
-            # 3. Obter a data e hora atual localizada
-            # Isso garante que o 'RELATIVE_BASE' esteja no fuso horário correto
-            now_localized = datetime.datetime.now(sao_paulo_tz)
+            # Obter a data e hora atual no fuso horário de São Paulo, como um objeto aware
+            now_aware = datetime.datetime.now(sao_paulo_tz)
+            
+            # Converter para naive para comparação com o resultado do dateparser (que é naive)
+            now_naive = now_aware.replace(tzinfo=None)
 
+            # --- PRIMEIRA TENTATIVA DE PARSEAMENTO (SEM PREFERIR FUTURO, COM ORDEM DIA/MÊS) ---
+            # Tentar parsear a data/hora sem forçar o futuro, para pegar o ano atual se aplicável
             dt = dateparser.parse(
-                processed_text, # Usar o texto pré-processado
+                processed_text,
                 settings={
-                    "PREFER_DATES_FROM": "future", # Preferir datas no futuro
-                    "TIMEZONE": "America/Sao_Paulo", # Interpretar a entrada neste fuso horário
-                    "RETURN_AS_TIMEZONE_AWARE": False, # Retornar um datetime ingênuo (sem info de fuso)
-                    "RELATIVE_BASE": now_localized, # Usar a data/hora localizada como base
+                    "DATE_ORDER": "DMY", # Adicionar esta configuração para D/M/Y
+                    "TIMEZONE": "America/Sao_Paulo",
+                    "RETURN_AS_TIMEZONE_AWARE": False,
+                    "RELATIVE_BASE": now_aware, # Usar aware para a base
                 },
             )
-            logger.info(f"dateparser.parse retornou: {dt} para o texto '{processed_text}' com base relativa {now_localized}")
-            # <--- FIM DAS ALTERAÇÕES AQUI ---
+            logger.info(f"Primeiro parse (sem prefer future): {dt} (tipo: {type(dt)}) para '{processed_text}'")
 
+            # Verificar se o parseamento foi bem-sucedido
             if not dt or not isinstance(dt, datetime.datetime):
-                logger.warning(f"Data/hora não entendida para '{processed_text}'. dt: {dt}")
+                logger.warning(f"Data/hora não entendida na primeira tentativa para '{processed_text}'. dt: {dt}")
                 await update.message.reply_text(
                     "❌ Não entendi *apenas* o dia e horário. Tente algo como:\n"
                     "- Amanhã às 14h\n"
@@ -196,7 +200,43 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 )
                 return
 
-            # Se a data/hora for válida, guarda no user_data e pede a descrição
+            # 2. Se a data/hora parseada estiver no passado, tentar novamente forçando o futuro
+            # Usamos uma pequena margem (e.g., 5 segundos) para evitar que um agendamento "agora" seja considerado passado
+            # devido a pequenas diferenças de milissegundos ou atrasos no processamento.
+            # Se a data parseada é menor ou igual ao momento atual (com uma margem de 5 segundos para trás),
+            # significa que ela já "passou" ou está acontecendo "agora".
+            if dt <= now_naive - datetime.timedelta(seconds=5):
+                logger.info(f"Data/hora parseada ({dt}) está no passado. Tentando avançar para o futuro.")
+                dt_future = dateparser.parse(
+                    processed_text,
+                    settings={
+                        "DATE_ORDER": "DMY",
+                        "PREFER_DATES_FROM": "future", # Agora sim, preferir o futuro
+                        "TIMEZONE": "America/Sao_Paulo",
+                        "RETURN_AS_TIMEZONE_AWARE": False,
+                        "RELATIVE_BASE": now_aware,
+                    },
+                )
+                # Se dt_future é válido e realmente avançou (é maior que o now_naive), use-o
+                if dt_future and isinstance(dt_future, datetime.datetime) and dt_future > now_naive - datetime.timedelta(seconds=5):
+                    dt = dt_future
+                    logger.info(f"Data/hora avançada para o futuro: {dt}")
+                else:
+                    # Se mesmo com "prefer future" ainda está no passado ou não é válido
+                    await update.message.reply_text(
+                        "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
+                    )
+                    return
+            
+            # Final check: se, após todas as tentativas, o tempo ainda está no passado (mesmo que por um fio)
+            # Isso pega casos onde a diferença é mínima, como 20:25:01 vs 20:25:00
+            if dt <= now_naive:
+                await update.message.reply_text(
+                    "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
+                )
+                return
+
+            # Se a data/hora for válida e no futuro, guarda no user_data e pede a descrição
             context.user_data["temp_datetime"] = dt.isoformat() # Salva como string ISO
             context.user_data["expecting"] = "schedule_description"
             await update.message.reply_text(
@@ -227,7 +267,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         # --- AQUI ESTÁ A MAIOR MUDANÇA: AGENDANDO O ALERTA NO TELEGRAM ---
         # Certifique-se de que a data/hora está no futuro para agendar o job
-        if task_datetime <= datetime.datetime.now():
+        # Esta verificação é redundante se a lógica acima funcionou, mas é uma boa segurança.
+        sao_paulo_tz = pytz.timezone('America/Sao_Paulo')
+        now_naive = datetime.datetime.now(sao_paulo_tz).replace(tzinfo=None)
+        if task_datetime <= now_naive:
             await update.message.reply_text(
                 "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
             )
