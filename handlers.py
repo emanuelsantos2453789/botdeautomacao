@@ -96,12 +96,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(f"✅ Meta “{atividade}” salva com sucesso!")
         context.user_data.pop("expecting", None)
         return
-
-    # 3.2) Criando AGENDAMENTO
-  async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # ... código acima permanece igual
-
-    # Bloco de agendamento corrigido:
+        
   if state == "schedule":
         try:
             # Interpreta data e hora em linguagem natural
