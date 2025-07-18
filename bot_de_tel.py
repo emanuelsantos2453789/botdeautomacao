@@ -1,8 +1,6 @@
 import os
 import logging
-import datetime
 
-from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -12,24 +10,25 @@ from telegram.ext import (
     ContextTypes,
 )
 
+from google_calendar import init_calendar_service
 from handlers import (
-    rotina,         
-    rotina_callback, 
-    handle_text,     
+    rotina,
+    rotina_callback,
+    mark_done_callback,
+    handle_text,
 )
 
 
-from google_calendar import init_calendar_service
-
 def main():
+    # Logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(message)s",
-        level=logging.INFO
+        level=logging.INFO,
     )
-    
     logger = logging.getLogger(__name__)
 
-    TOKEN       = os.getenv("BOT_TOKEN")
+    # Vars de ambiente
+    TOKEN = os.getenv("BOT_TOKEN")
     CALENDAR_ID = os.getenv("CALENDAR_ID")
     if not TOKEN:
         logger.error("BOT_TOKEN não configurado")
@@ -39,20 +38,26 @@ def main():
     calendar_service = init_calendar_service()
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # compartilha no context
+    # Compartilha no context
     app.bot_data["calendar_service"] = calendar_service
-    app.bot_data["calendar_id"]      = CALENDAR_ID
+    app.bot_data["calendar_id"] = CALENDAR_ID
 
-    # registra menu e handlers
+    # Handlers
     app.add_handler(CommandHandler("rotina", rotina))
-    app.add_handler(CallbackQueryHandler(rotina_callback, pattern=r"^menu_"))
+    app.add_handler(
+        CallbackQueryHandler(rotina_callback, pattern=r"^menu_")
+    )
+    app.add_handler(
+        CallbackQueryHandler(mark_done_callback, pattern=r"^done_")
+    )
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)
     )
 
-    # inicia polling
+    # Inicia long polling
     app.run_polling()
     logger.info("Bot rodando – use /rotina para começar")
+
 
 if __name__ == "__main__":
     main()
