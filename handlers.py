@@ -15,11 +15,13 @@ from google_calendar import create_event
 
 DADOS_FILE = "dados.json"
 
+
 def load_data():
     if not os.path.exists(DADOS_FILE):
         return {}
     with open(DADOS_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 def save_data(data):
     with open(DADOS_FILE, "w", encoding="utf-8") as f:
@@ -30,12 +32,15 @@ def save_data(data):
 async def rotina(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [InlineKeyboardButton("📈 Criar Meta",      callback_data="menu_meta")],
-        [InlineKeyboardButton("⏰ Agendar Tarefa", callback_data="menu_schedule")],
-        [InlineKeyboardButton("📋 Minhas Metas",   callback_data="menu_list_metas")],
-        [InlineKeyboardButton("📝 Minhas Tarefas", callback_data="menu_list_tasks")],
+        [InlineKeyboardButton("⏰ Agendar Tarefa",  callback_data="menu_schedule")],
+        [InlineKeyboardButton("📋 Minhas Metas",    callback_data="menu_list_metas")],
+        [InlineKeyboardButton("📝 Minhas Tarefas",  callback_data="menu_list_tasks")],
     ]
     markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🔹 Bem-vindo à Rotina! Escolha uma opção:", reply_markup=markup)
+    await update.message.reply_text(
+        "🔹 Bem-vindo à Rotina! Escolha uma opção:",
+        reply_markup=markup
+    )
 
 
 # 2) Trata clique no menu
@@ -52,23 +57,26 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if cmd == "menu_meta":
         context.user_data["expecting"] = "meta"
         await query.edit_message_text("✏️ Digite a descrição da meta semanal que deseja criar:")
+        return
 
     # Agendar Tarefa
-    elif cmd == "menu_schedule":
+    if cmd == "menu_schedule":
         context.user_data["expecting"] = "schedule"
         await query.edit_message_text("✏️ Em que dia e horário quer agendar? (ex: Amanhã 14h)")
+        return
 
     # Listar Metas
-    elif cmd == "menu_list_metas":
+    if cmd == "menu_list_metas":
         metas = user.get("metas", [])
         if metas:
             texto = "📈 Suas Metas Semanais:\n" + "\n".join(f"- {m['activity']}" for m in metas)
         else:
             texto = "📈 Você ainda não tem metas cadastradas."
         await query.edit_message_text(texto)
+        return
 
     # Listar Tarefas
-    elif cmd == "menu_list_tasks":
+    if cmd == "menu_list_tasks":
         tarefas = user.get("tarefas", [])
         if tarefas:
             texto = "📝 Suas Tarefas Agendadas:\n" + "\n".join(
@@ -77,6 +85,7 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         else:
             texto = "📝 Você ainda não tem tarefas agendadas."
         await query.edit_message_text(texto)
+        return
 
 
 # 3) Trata texto livre após menu
@@ -96,8 +105,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(f"✅ Meta “{atividade}” salva com sucesso!")
         context.user_data.pop("expecting", None)
         return
-        
-  if state == "schedule":
+
+    # 3.2) Criando AGENDAMENTO
+    if state == "schedule":
         try:
             # Interpreta data e hora em linguagem natural
             dt = dateparser.parse(
@@ -143,6 +153,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         except Exception as e:
             await update.message.reply_text(f"❌ Erro ao agendar tarefa: {e}")
+            context.user_data.pop("expecting", None)
             return
 
     # 3.3) Fallback quando ninguém está aguardando texto
