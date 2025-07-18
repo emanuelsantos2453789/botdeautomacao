@@ -14,7 +14,6 @@ from google_calendar import init_calendar_service
 from handlers import (
     rotina,
     rotina_callback,
-    mark_done_callback,
     handle_text,
 )
 
