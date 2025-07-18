@@ -1,10 +1,9 @@
-# google_calendar.py
 import os
 import json
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError # Importar para capturar erros específicos da API
+from googleapiclient.errors import HttpError
 
 # Escopos necessários para ler/escrever na Agenda
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -12,13 +11,14 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 def init_calendar_service():
     """
     Inicializa e retorna o serviço da Google Calendar API.
-    1) Carrega de credenciais.json se existir.
-    2) Senão, tenta usar a variável GOOGLE_CREDENTIALS_JSON.
+    **Prioriza o carregamento de credenciais.json para este teste.**
     """
     creds = None
 
-    # 1) Se o arquivo credenciais.json estiver presente, usa ele
+    # Caminho para o arquivo credenciais.json
     local_path = os.path.join(os.path.dirname(__file__), 'credenciais.json')
+    
+    # 1) Tenta carregar do arquivo credenciais.json
     if os.path.isfile(local_path):
         try:
             creds = service_account.Credentials.from_service_account_file(
@@ -26,33 +26,21 @@ def init_calendar_service():
             )
             logging.info("Google Calendar: credenciais carregadas de credenciais.json")
         except Exception as e:
-            logging.error(f"Google Calendar: Falha ao carregar credenciais.json: {e}")
-            # Não retornar, tentar a próxima opção
+            logging.error(f"Google Calendar: Falha ao carregar credenciais.json: {e}. Verifique o conteúdo do arquivo.")
+            # Não retornar, o erro será propagado mais abaixo se 'creds' for None
+    else:
+        logging.error("Google Calendar: Arquivo credenciais.json NÃO ENCONTRADO no caminho esperado.")
 
-    # 2) Se ainda não tiver credenciais, tenta a variável de ambiente
-    if not creds:
-        raw = os.getenv('GOOGLE_CREDENTIALS_JSON', '').strip()
-        if raw:
-            try:
-                # É crucial que raw seja um JSON válido e em uma única linha se for de variável de ambiente
-                data = json.loads(raw)
-                creds = service_account.Credentials.from_service_account_info(
-                    data, scopes=SCOPES
-                )
-                logging.info("Google Calendar: credenciais carregadas de variável de ambiente")
-            except json.JSONDecodeError as je:
-                logging.error(f"Google Calendar: GOOGLE_CREDENTIALS_JSON não é JSON válido: {je}")
-            except Exception as e:
-                logging.error(f"Google Calendar: Erro criando credenciais de serviço: {e}")
 
-    # 3) Se ainda não conseguiu, aborta com erro claro
+    # 2) Se não conseguiu carregar as credenciais, levanta um erro claro
     if not creds:
         raise RuntimeError(
             "Não foi possível inicializar credenciais do Google Calendar. "
-            "Verifique se credenciais.json existe ou se a variável GOOGLE_CREDENTIALS_JSON está correta."
+            "Verifique se o arquivo 'credenciais.json' existe na raiz do seu projeto "
+            "e se o JSON dentro dele está correto e completo."
         )
 
-    # 4) Constrói o serviço
+    # 3) Constrói o serviço da API
     try:
         service = build('calendar', 'v3', credentials=creds)
         logging.info("Google Calendar: Serviço construído com sucesso.")
@@ -60,7 +48,6 @@ def init_calendar_service():
     except Exception as e:
         logging.error(f"Google Calendar: Erro ao construir o serviço da API: {e}")
         raise # Propaga o erro para o main
-
 
 def create_event(service, calendar_id, summary, start_dt, end_dt, description=None):
     """
