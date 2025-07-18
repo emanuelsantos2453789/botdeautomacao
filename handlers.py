@@ -4,13 +4,14 @@ import re
 import datetime
 import dateparser
 import logging
+import pytz # <--- ADICIONE ESTA IMPORTAÇÃO
 
 from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
-from telegram.ext import ContextTypes, JobQueue # Importe JobQueue
+from telegram.ext import ContextTypes, JobQueue
 
 DADOS_FILE = "dados.json"
 
@@ -33,7 +34,7 @@ def save_data(data):
 async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     chat_id = job.chat_id
-    task_text = job.data # A descrição da tarefa é passada como 'data' do job
+    task_text = job.data
     
     await context.bot.send_message(
         chat_id=chat_id,
@@ -162,20 +163,31 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if state == "schedule_datetime":
         logger.info(f"Tentando parsear data/hora: '{text}'")
         try:
-            # A base relativa é importante para "Amanhã" ou "Terça"
+            # <--- INÍCIO DAS ALTERAÇÕES AQUI ---
+            # 1. Pré-processar o texto: remover 'H' se presente
+            processed_text = text.replace('H', '').strip()
+
+            # 2. Definir o fuso horário para a base relativa
+            sao_paulo_tz = pytz.timezone('America/Sao_Paulo')
+            
+            # 3. Obter a data e hora atual localizada
+            # Isso garante que o 'RELATIVE_BASE' esteja no fuso horário correto
+            now_localized = datetime.datetime.now(sao_paulo_tz)
+
             dt = dateparser.parse(
-                text,
+                processed_text, # Usar o texto pré-processado
                 settings={
-                    "PREFER_DATES_FROM": "future",
-                    "TIMEZONE": "America/Sao_Paulo",
-                    "RETURN_AS_TIMEZONE_AWARE": False,
-                    "RELATIVE_BASE": datetime.datetime.now(),
+                    "PREFER_DATES_FROM": "future", # Preferir datas no futuro
+                    "TIMEZONE": "America/Sao_Paulo", # Interpretar a entrada neste fuso horário
+                    "RETURN_AS_TIMEZONE_AWARE": False, # Retornar um datetime ingênuo (sem info de fuso)
+                    "RELATIVE_BASE": now_localized, # Usar a data/hora localizada como base
                 },
             )
-            logger.info(f"dateparser.parse retornou: {dt} para o texto '{text}'")
+            logger.info(f"dateparser.parse retornou: {dt} para o texto '{processed_text}' com base relativa {now_localized}")
+            # <--- FIM DAS ALTERAÇÕES AQUI ---
 
             if not dt or not isinstance(dt, datetime.datetime):
-                logger.warning(f"Data/hora não entendida para '{text}'. dt: {dt}")
+                logger.warning(f"Data/hora não entendida para '{processed_text}'. dt: {dt}")
                 await update.message.reply_text(
                     "❌ Não entendi *apenas* o dia e horário. Tente algo como:\n"
                     "- Amanhã às 14h\n"
