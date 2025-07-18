@@ -10,9 +10,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
-from telegram.ext import ContextTypes
-
-from google_calendar import create_event
+from telegram.ext import ContextTypes, JobQueue # Importe JobQueue
 
 DADOS_FILE = "dados.json"
 
@@ -30,6 +28,18 @@ def save_data(data):
     with open(DADOS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+
+# --- Função para enviar o alerta da tarefa ---
+async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    chat_id = job.chat_id
+    task_text = job.data # A descrição da tarefa é passada como 'data' do job
+    
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"⏰ Lembrete: Sua tarefa '{task_text}' está marcada para agora!"
+    )
+    logger.info(f"Alerta de tarefa '{task_text}' enviado para o usuário {chat_id}.")
 
 # 1) Exibe menu principal
 async def rotina(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -66,9 +76,8 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    # Agendar Tarefa
+    # Agendar Tarefa (Primeiro passo: pedir data/hora)
     if cmd == "menu_schedule":
-        # Muda para um novo estado para aguardar a data/hora
         context.user_data["expecting"] = "schedule_datetime"
         await query.edit_message_text(
             "✏️ Em que dia e horário quer agendar? (ex: Amanhã 14h, 20/07 15h)"
@@ -91,12 +100,39 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if cmd == "menu_list_tasks":
         tarefas = user.get("tarefas", [])
         if tarefas:
-            texto = "📝 Suas Tarefas Agendadas:\n" + "\n".join(
-                f"- {t['activity']} em {t['when']}" for t in tarefas
-            )
+            texto = "📝 Suas Tarefas Agendadas:\n"
+            for i, t in enumerate(tarefas):
+                # Verifica se 'when' é uma string e tenta convertê-la para datetime
+                if isinstance(t.get('when'), str):
+                    try:
+                        dt_obj = datetime.datetime.fromisoformat(t['when'])
+                        when_str = dt_obj.strftime("%d/%m/%Y às %H:%M")
+                    except ValueError:
+                        when_str = t['when'] # Usa a string original se houver erro
+                else:
+                    when_str = str(t.get('when')) # Converte para string caso não seja
+                
+                status = "✅ Concluída" if t.get('done') else "⏳ Pendente"
+                texto += f"- {t['activity']} em {when_str} [{status}]\n"
+                
+                # Adiciona botão para marcar como concluída (apenas se pendente)
+                if not t.get('done'):
+                    keyboard = [[InlineKeyboardButton("Marcar como Concluída", callback_data=f"mark_done_{i}")]]
+                    markup = InlineKeyboardMarkup(keyboard)
+                    # Envia cada tarefa como uma mensagem separada para ter seu próprio botão
+                    await context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text=texto,
+                        reply_markup=markup
+                    )
+                    texto = "" # Limpa texto para a próxima iteração
+            if texto: # Envia qualquer texto restante se não houver botões no último
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=texto
+                )
         else:
-            texto = "📝 Você ainda não tem tarefas agendadas."
-        await query.edit_message_text(texto)
+            await query.edit_message_text("📝 Você ainda não tem tarefas agendadas.")
         return
 
 
@@ -126,6 +162,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if state == "schedule_datetime":
         logger.info(f"Tentando parsear data/hora: '{text}'")
         try:
+            # A base relativa é importante para "Amanhã" ou "Terça"
             dt = dateparser.parse(
                 text,
                 settings={
@@ -145,7 +182,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     "- 20/07 15h\n"
                     "- Terça 10h"
                 )
-                # Permanece no estado 'schedule_datetime' para nova tentativa
                 return
 
             # Se a data/hora for válida, guarda no user_data e pede a descrição
@@ -161,7 +197,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         except Exception as e:
             logger.error(f"Erro ao parsear data/hora '{text}': {e}", exc_info=True)
             await update.message.reply_text(f"❌ Ocorreu um erro ao processar a data/hora: {e}")
-            context.user_data.pop("expecting", None) # Sai do estado para evitar loop
+            context.user_data.pop("expecting", None)
             return
 
     # 3.3) Capturando a descrição da tarefa
@@ -175,44 +211,47 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
         # Converte a string ISO de volta para datetime
-        start_dt = datetime.datetime.fromisoformat(temp_dt_str)
-        end_dt = start_dt + datetime.timedelta(hours=1) # Duração padrão de 1 hora
+        task_datetime = datetime.datetime.fromisoformat(temp_dt_str)
 
-        try:
-            # Agenda no Google Calendar
-            srv = context.bot_data["calendar_service"]
-            cal = context.bot_data["calendar_id"]
-            logger.info(f"Chamando create_event para '{text}' em '{start_dt}' no calendar '{cal}'")
-            create_event(srv, cal, text, start_dt, end_dt)
-            logger.info("create_event concluído com sucesso.")
-
-            # Persiste no JSON
-            tarefas = user.setdefault("tarefas", [])
-            tarefas.append({
-                "activity": text,
-                "done": False,
-                "when": start_dt.strftime("%Y-%m-%dT%H:%M:%S")
-            })
-            save_data(db)
-            logger.info(f"Tarefa '{text}' salva no DADOS_FILE para o usuário {chat_id}.")
-
+        # --- AQUI ESTÁ A MAIOR MUDANÇA: AGENDANDO O ALERTA NO TELEGRAM ---
+        # Certifique-se de que a data/hora está no futuro para agendar o job
+        if task_datetime <= datetime.datetime.now():
             await update.message.reply_text(
-                f"📅 Tarefa “{text}” agendada para "
-                f"{start_dt:%d/%m} às {start_dt:%H:%M}!"
-            )
-            context.user_data.pop("expecting", None) # Finaliza o estado
-            context.user_data.pop("temp_datetime", None) # Limpa a data temporária
-            logger.info(f"Mensagem de sucesso de agendamento enviada para o usuário {chat_id}.")
-            return
-
-        except Exception as e:
-            logger.error(f"Erro ao agendar tarefa final para '{text}': {e}", exc_info=True)
-            await update.message.reply_text(
-                f"❌ Ocorreu um erro ao agendar a tarefa. Por favor, tente novamente mais tarde. Erro: {e}"
+                "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
             )
             context.user_data.pop("expecting", None)
-            context.user_data.pop("temp_datetime", None) # Limpa mesmo com erro
+            context.user_data.pop("temp_datetime", None)
             return
+
+        # Agendando o alerta com o JobQueue
+        context.job_queue.run_once(
+            send_task_alert,
+            when=task_datetime,
+            chat_id=chat_id,
+            data=text, # Passa a descrição da tarefa para a função de alerta
+            name=f"task_alert_{chat_id}_{task_datetime.timestamp()}" # Nome único para o job
+        )
+        logger.info(f"Alerta de Telegram agendado para '{text}' em '{task_datetime}'.")
+        
+        # Salvando a tarefa no dados.json
+        tarefas = user.setdefault("tarefas", [])
+        tarefas.append({
+            "activity": text,
+            "done": False,
+            "when": task_datetime.isoformat() # Salva a data/hora no formato ISO
+        })
+        save_data(db)
+        logger.info(f"Tarefa '{text}' salva no DADOS_FILE para o usuário {chat_id}.")
+
+        await update.message.reply_text(
+            f"📅 Tarefa “{text}” agendada para "
+            f"{task_datetime:%d/%m} às {task_datetime:%H:%M}!\n"
+            "Eu te avisarei no Telegram quando for a hora!"
+        )
+        context.user_data.pop("expecting", None) # Finaliza o estado
+        context.user_data.pop("temp_datetime", None) # Limpa a data temporária
+        logger.info(f"Mensagem de sucesso de agendamento enviada para o usuário {chat_id}.")
+        return
 
     # 3.4) Fallback quando ninguém está aguardando texto
     logger.info(f"Texto '{text}' recebido sem estado 'expecting'.")
@@ -230,7 +269,16 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     db = load_data()
     tarefas = db.setdefault(chat_id, {}).setdefault("tarefas", [])
 
-    idx = int(query.data.split("_")[1])
+    # O índice vem do callback_data: "mark_done_X"
+    # Certifique-se de que o message_id também é usado se você tiver múltiplos botões
+    # na mesma mensagem para evitar bugs em edições
+    try:
+        idx = int(query.data.split("_")[2]) # Pega o índice após "mark_done_"
+    except (IndexError, ValueError):
+        logger.error(f"Erro ao parsear índice do callback_data: {query.data}")
+        await query.edit_message_text("❌ Erro ao identificar a tarefa.")
+        return
+
     logger.info(f"Usuário {chat_id} tentou marcar tarefa {idx} como concluída.")
     if 0 <= idx < len(tarefas):
         tarefas[idx]["done"] = True
@@ -240,5 +288,5 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         logger.info(f"Tarefa '{tarefas[idx]['activity']}' marcada como concluída para o usuário {chat_id}.")
     else:
-        await query.edit_message_text("❌ Índice inválido.")
+        await query.edit_message_text("❌ Índice inválido para marcar como concluída.")
         logger.warning(f"Tentativa de marcar tarefa com índice inválido {idx} para o usuário {chat_id}.")
