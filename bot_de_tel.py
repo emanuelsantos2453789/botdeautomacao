@@ -62,22 +62,28 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
 
     # 7) Agenda os jobs
+    # bot_de_tel.py (trecho de agendamento)
+
+    # 7) Agenda os jobs
     jq = app.job_queue
+
+    # Feedback diário todo dia às 20:00
     jq.run_daily(
         daily_feedback_job,
-        time=datetime.time(hour=20, minute=0),
-        context=None
+        time=datetime.time(hour=20, minute=0)
     )
+
+    # Relatório semanal domingo às 18:00
     jq.run_daily(
         weekly_report_job,
         time=datetime.time(hour=18, minute=0),
-        days=(6,),
-        context=None
+        days=(6,)   # domingo = 6
     )
+
+    # Backup automático toda segunda às 08:00
     jq.run_daily(
         weekly_backup_job,
-        time=datetime.time(hour=8, minute=0),
-        context=None
+        time=datetime.time(hour=8, minute=0)
     )
 
     # 8) Inicia polling
