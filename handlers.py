@@ -3,7 +3,7 @@ import json
 import re
 import datetime
 import dateparser
-import logging # Importar logging
+import logging
 
 from telegram import (
     Update,
@@ -16,7 +16,6 @@ from google_calendar import create_event
 
 DADOS_FILE = "dados.json"
 
-# Configurar logging para o handlers.py também
 logger = logging.getLogger(__name__)
 
 
@@ -53,7 +52,7 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
 
-    cmd = query.data  # ex: 'menu_meta'
+    cmd = query.data
     user_id = str(query.message.chat_id)
     db = load_data()
     user = db.setdefault(user_id, {})
@@ -69,9 +68,10 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Agendar Tarefa
     if cmd == "menu_schedule":
-        context.user_data["expecting"] = "schedule"
+        # Muda para um novo estado para aguardar a data/hora
+        context.user_data["expecting"] = "schedule_datetime"
         await query.edit_message_text(
-            "✏️ Em que dia e horário quer agendar? (ex: Amanhã 14h)"
+            "✏️ Em que dia e horário quer agendar? (ex: Amanhã 14h, 20/07 15h)"
         )
         return
 
@@ -122,11 +122,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.info(f"Meta '{atividade}' salva para o usuário {chat_id}.")
         return
 
-    # 3.2) Criando AGENDAMENTO
-    if state == "schedule":
-        logger.info(f"Entrou no estado 'schedule' para o texto: '{text}'")
+    # 3.2) Capturando APENAS a data e hora para agendamento
+    if state == "schedule_datetime":
+        logger.info(f"Tentando parsear data/hora: '{text}'")
         try:
-            # Interpreta data e hora em linguagem natural
             dt = dateparser.parse(
                 text,
                 settings={
@@ -141,22 +140,49 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if not dt or not isinstance(dt, datetime.datetime):
                 logger.warning(f"Data/hora não entendida para '{text}'. dt: {dt}")
                 await update.message.reply_text(
-                    "❌ Não entendi o dia e horário. Tente algo como:\n"
+                    "❌ Não entendi *apenas* o dia e horário. Tente algo como:\n"
                     "- Amanhã às 14h\n"
                     "- 20/07 15h\n"
                     "- Terça 10h"
                 )
-                context.user_data.pop("expecting", None)
+                # Permanece no estado 'schedule_datetime' para nova tentativa
                 return
 
-            start_dt = dt
-            end_dt = start_dt + datetime.timedelta(hours=1)
-            logger.info(f"Tarefa agendada de {start_dt} a {end_dt}")
+            # Se a data/hora for válida, guarda no user_data e pede a descrição
+            context.user_data["temp_datetime"] = dt.isoformat() # Salva como string ISO
+            context.user_data["expecting"] = "schedule_description"
+            await update.message.reply_text(
+                f"Certo, agendado para *{dt.strftime('%d/%m/%Y às %H:%M')}*.\n"
+                "Agora, qual a **descrição** da tarefa?"
+            )
+            logger.info(f"Data/hora '{dt}' capturada. Pedindo descrição da tarefa.")
+            return
 
+        except Exception as e:
+            logger.error(f"Erro ao parsear data/hora '{text}': {e}", exc_info=True)
+            await update.message.reply_text(f"❌ Ocorreu um erro ao processar a data/hora: {e}")
+            context.user_data.pop("expecting", None) # Sai do estado para evitar loop
+            return
+
+    # 3.3) Capturando a descrição da tarefa
+    if state == "schedule_description":
+        logger.info(f"Recebeu descrição da tarefa: '{text}'")
+        temp_dt_str = context.user_data.get("temp_datetime")
+        if not temp_dt_str:
+            logger.error("Erro: temp_datetime não encontrado ao tentar agendar descrição.")
+            await update.message.reply_text("❌ Ops, algo deu errado. Por favor, tente agendar novamente desde o início.")
+            context.user_data.pop("expecting", None)
+            return
+
+        # Converte a string ISO de volta para datetime
+        start_dt = datetime.datetime.fromisoformat(temp_dt_str)
+        end_dt = start_dt + datetime.timedelta(hours=1) # Duração padrão de 1 hora
+
+        try:
             # Agenda no Google Calendar
             srv = context.bot_data["calendar_service"]
             cal = context.bot_data["calendar_id"]
-            logger.info(f"Chamando create_event para '{text}' no calendar '{cal}'")
+            logger.info(f"Chamando create_event para '{text}' em '{start_dt}' no calendar '{cal}'")
             create_event(srv, cal, text, start_dt, end_dt)
             logger.info("create_event concluído com sucesso.")
 
@@ -174,19 +200,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 f"📅 Tarefa “{text}” agendada para "
                 f"{start_dt:%d/%m} às {start_dt:%H:%M}!"
             )
-            context.user_data.pop("expecting", None)
+            context.user_data.pop("expecting", None) # Finaliza o estado
+            context.user_data.pop("temp_datetime", None) # Limpa a data temporária
             logger.info(f"Mensagem de sucesso de agendamento enviada para o usuário {chat_id}.")
             return
 
         except Exception as e:
-            logger.error(f"Erro ao agendar tarefa para '{text}': {e}", exc_info=True) # exc_info=True para ver o traceback completo
+            logger.error(f"Erro ao agendar tarefa final para '{text}': {e}", exc_info=True)
             await update.message.reply_text(
                 f"❌ Ocorreu um erro ao agendar a tarefa. Por favor, tente novamente mais tarde. Erro: {e}"
             )
             context.user_data.pop("expecting", None)
+            context.user_data.pop("temp_datetime", None) # Limpa mesmo com erro
             return
 
-    # 3.3) Fallback quando ninguém está aguardando texto
+    # 3.4) Fallback quando ninguém está aguardando texto
     logger.info(f"Texto '{text}' recebido sem estado 'expecting'.")
     await update.message.reply_text(
         "👉 Use /rotina para abrir o menu e escolher uma opção."
@@ -202,7 +230,6 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     db = load_data()
     tarefas = db.setdefault(chat_id, {}).setdefault("tarefas", [])
 
-    # extrai índice de "done_{i}"
     idx = int(query.data.split("_")[1])
     logger.info(f"Usuário {chat_id} tentou marcar tarefa {idx} como concluída.")
     if 0 <= idx < len(tarefas):
