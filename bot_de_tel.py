@@ -13,6 +13,7 @@ from telegram.ext import (
 from google_calendar import init_calendar_service
 from handlers import (
     rotina,
+    mark_done_callback,
     rotina_callback,
     handle_text,
 )
