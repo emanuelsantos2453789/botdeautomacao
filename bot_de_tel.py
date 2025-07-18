@@ -1,70 +1,46 @@
+# Seu bot_de_tel.py (ou o arquivo principal)
 import os
 import logging
-
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
     filters,
-    ContextTypes,
+    JobQueue # Importe JobQueue
 )
+import handlers # Importe seu arquivo handlers.py
 
-from google_calendar import init_calendar_service
-from handlers import (
-    rotina,
-    rotina_callback,
-    mark_done_callback,
-    handle_text,
+# Configuração de logs
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
+# Token do seu bot do Telegram
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-def main():
-    # 1) Logging
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        level=logging.INFO,
-    )
-    logger = logging.getLogger(__name__)
+def main() -> None:
+    # 1. Configurar o ApplicationBuilder com JobQueue
+    # Passamos o job_queue aqui
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    # 2. Obter a instância do JobQueue
+    job_queue: JobQueue = application.job_queue # Pegar a instância do JobQueue
 
-    # 2) Variáveis de ambiente
-    TOKEN = os.getenv("BOT_TOKEN")
-    CALENDAR_ID = os.getenv("CALENDAR_ID")
-    if not TOKEN:
-        logger.error("BOT_TOKEN não configurado")
-        return
-    if not CALENDAR_ID: # Adicionado para verificar o CALENDAR_ID também
-        logger.warning("CALENDAR_ID não configurado. Agendamento pode falhar.")
+    # Comandos
+    application.add_handler(CommandHandler("start", handlers.rotina))
+    application.add_handler(CommandHandler("rotina", handlers.rotina))
 
+    # Callback Queries (botões inline)
+    application.add_handler(CallbackQueryHandler(handlers.rotina_callback, pattern=r"^menu_"))
+    application.add_handler(CallbackQueryHandler(handlers.mark_done_callback, pattern=r"^mark_done_"))
 
-    # 3) Inicializa Google Calendar e Application
-    try:
-        calendar_service = init_calendar_service()
-        logger.info("Google Calendar Service inicializado com sucesso.")
-    except Exception as e:
-        logger.error(f"Erro ao inicializar o serviço do Google Calendar: {e}")
-        # Você pode decidir se quer parar o bot aqui ou continuar sem o calendar
-        return # Para o bot se o calendar não puder ser inicializado
+    # Mensagens de texto (geral)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.handle_text))
 
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    # 4) Compartilha o serviço no bot_data
-    app.bot_data["calendar_service"] = calendar_service
-    app.bot_data["calendar_id"] = CALENDAR_ID
-    logger.info(f"CALENDAR_ID configurado para: {CALENDAR_ID}")
-
-
-    # 5) Registra handlers
-    app.add_handler(CommandHandler("rotina", rotina))
-    app.add_handler(CallbackQueryHandler(rotina_callback, pattern=r"^menu_"))
-    app.add_handler(CallbackQueryHandler(mark_done_callback, pattern=r"^done_"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    logger.info("Handlers registrados.")
-
-    # 6) Inicia long polling
-    logger.info("Bot rodando – use /rotina para começar")
-    app.run_polling()
-
+    # Iniciar o bot
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
