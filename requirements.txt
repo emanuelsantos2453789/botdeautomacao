@@ -6,3 +6,4 @@ google-auth-oauthlib
 reportlab
 pandas
 dateparser
+pytz
