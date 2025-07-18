@@ -39,18 +39,47 @@ def save_data(data):
 async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     chat_id = job.chat_id
-    task_text = job.data
+    task_data = job.data # Agora job.data é um dicionário
     
-    logger.info(f"⏰ [ALERTA] Tentando enviar alerta para chat_id: {chat_id}, tarefa: '{task_text}'. Horário atual no job: {datetime.datetime.now()} (UTC).")
+    task_text = task_data['description']
+    alert_type = task_data['alert_type'] # 'start' ou 'end'
+    
+    if alert_type == 'start':
+        message = f"⏰ Lembrete: Sua tarefa '{task_text}' ESTÁ COMEÇANDO agora!"
+    elif alert_type == 'end':
+        message = f"✅ Lembrete: Sua tarefa '{task_text}' ESTÁ TERMINANDO agora!"
+    else:
+        message = f"⏰ Lembrete: Sua tarefa '{task_text}' está marcada para agora!" # Fallback
+
+    logger.info(f"⏰ [ALERTA] Tentando enviar alerta '{alert_type}' para chat_id: {chat_id}, tarefa: '{task_text}'. Horário atual no job: {datetime.datetime.now()} (UTC).")
     
     try:
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"⏰ Lembrete: Sua tarefa '{task_text}' está marcada para agora!"
+            text=message
         )
-        logger.info(f"✅ [ALERTA] Alerta de tarefa '{task_text}' ENVIADO com sucesso para o usuário {chat_id}.")
+        logger.info(f"✅ [ALERTA] Alerta '{alert_type}' da tarefa '{task_text}' ENVIADO com sucesso para o usuário {chat_id}.")
+
+        # Se for o alerta de fim, perguntar sobre a conclusão
+        if alert_type == 'end':
+            # Adicionar um estado para esperar a resposta sobre a conclusão
+            context.user_data['expecting'] = 'task_completion_feedback'
+            context.user_data['current_task_for_feedback'] = task_text # Armazena a tarefa para feedback
+            
+            keyboard = [
+                [InlineKeyboardButton("Sim, concluí!", callback_data="feedback_yes")],
+                [InlineKeyboardButton("Não, não concluí.", callback_data="feedback_no")],
+            ]
+            markup = InlineKeyboardMarkup(keyboard)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"A tarefa '{task_text}' terminou. Você a concluiu?",
+                reply_markup=markup
+            )
+            logger.info(f"Pergunta de conclusão enviada para a tarefa '{task_text}' para o usuário {chat_id}.")
+
     except Exception as e:
-        logger.error(f"❌ [ALERTA] ERRO ao enviar alerta para chat_id: {chat_id}, tarefa: '{task_text}'. Erro: {e}", exc_info=True)
+        logger.error(f"❌ [ALERTA] ERRO ao enviar alerta '{alert_type}' para chat_id: {chat_id}, tarefa: '{task_text}'. Erro: {e}", exc_info=True)
 
 
 # 1) Exibe menu principal
@@ -92,7 +121,7 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if cmd == "menu_schedule":
         context.user_data["expecting"] = "schedule_datetime"
         await query.edit_message_text(
-            "✏️ Em que dia e horário quer agendar? (ex: Amanhã 14h, 20/07 15h)"
+            "✏️ Em que dia e horário quer agendar? (ex: Amanhã 14h, 20/07 15h, 08:30 às 12:00h)"
         )
         return
 
@@ -112,20 +141,31 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if cmd == "menu_list_tasks":
         tarefas = user.get("tarefas", [])
         if tarefas:
-            texto = "📝 Suas Tarefas Agendadas:\n"
+            texto_tarefas = "📝 Suas Tarefas Agendadas:\n"
             for i, t in enumerate(tarefas):
-                # Verifica se 'when' é uma string e tenta convertê-la para datetime
-                if isinstance(t.get('when'), str):
+                start_when_str = ""
+                end_when_str = ""
+                
+                # Processa a data/hora de início
+                if isinstance(t.get('start_when'), str):
                     try:
-                        dt_obj = datetime.datetime.fromisoformat(t['when'])
-                        when_str = dt_obj.strftime("%d/%m/%Y às %H:%M")
+                        start_dt_obj = datetime.datetime.fromisoformat(t['start_when'])
+                        start_when_str = start_dt_obj.strftime("%d/%m/%Y às %H:%M")
                     except ValueError:
-                        when_str = t['when'] # Usa a string original se houver erro
+                        start_when_str = t['start_when']
                 else:
-                    when_str = str(t.get('when')) # Converte para string caso não seja
+                    start_when_str = str(t.get('start_when'))
+                
+                # Processa a data/hora de fim (se existir)
+                if isinstance(t.get('end_when'), str):
+                    try:
+                        end_dt_obj = datetime.datetime.fromisoformat(t['end_when'])
+                        end_when_str = f" até {end_dt_obj.strftime('%H:%M')}"
+                    except ValueError:
+                        end_when_str = f" até {t['end_when']}"
                 
                 status = "✅ Concluída" if t.get('done') else "⏳ Pendente"
-                texto += f"- {t['activity']} em {when_str} [{status}]\n"
+                texto_tarefas += f"- {t['activity']} em {start_when_str}{end_when_str} [{status}]\n"
                 
                 # Adiciona botão para marcar como concluída (apenas se pendente)
                 if not t.get('done'):
@@ -134,14 +174,14 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     # Envia cada tarefa como uma mensagem separada para ter seu próprio botão
                     await context.bot.send_message(
                         chat_id=query.message.chat_id,
-                        text=texto,
+                        text=texto_tarefas,
                         reply_markup=markup
                     )
-                    texto = "" # Limpa texto para a próxima iteração
-            if texto: # Envia qualquer texto restante se não houver botões no último
+                    texto_tarefas = "" # Limpa texto para a próxima iteração
+            if texto_tarefas: # Envia qualquer texto restante se não houver botões no último
                 await context.bot.send_message(
                     chat_id=query.message.chat_id,
-                    text=texto
+                    text=texto_tarefas
                 )
         else:
             await query.edit_message_text("📝 Você ainda não tem tarefas agendadas.")
@@ -170,191 +210,362 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.info(f"Meta '{atividade}' salva para o usuário {chat_id}.")
         return
 
-    # 3.2) Capturando APENAS a data e hora para agendamento
+    # 3.2) Capturando APENAS a data e hora para agendamento (início e/ou fim)
     if state == "schedule_datetime":
         logger.info(f"Tentando parsear data/hora: '{text}'")
         try:
-            # 1. Pré-processar o texto: remover 'H' se presente e garantir que não há espaços extras
             processed_text = text.replace('H', '').strip()
             logger.info(f"Texto pré-processado para dateparser: '{processed_text}'")
             
-            # Obter o fuso horário de São Paulo
             sao_paulo_tz = pytz.timezone('America/Sao_Paulo')
-            
-            # Obter a data e hora atual no fuso horário de São Paulo, como um objeto aware
             now_aware = datetime.datetime.now(sao_paulo_tz)
+
+            # Tenta parsear para um período (ex: "08:30 às 12:00")
+            # dateparser.parse não tem um bom suporte nativo para "X to Y" em um único parse.
+            # Vamos tentar extrair duas datas/horas.
+
+            start_dt_naive = None
+            end_dt_naive = None
+
+            # Regex para tentar pegar "XX:YY às ZZ:WW" ou "XX:YY - ZZ:WW"
+            match_range = re.search(r'(\d{1,2}:\d{2})\s*(?:às|-)\s*(\d{1,2}:\d{2})', processed_text, re.IGNORECASE)
             
-            # Converter para naive para comparação com o resultado do dateparser (que é naive)
-            now_naive = now_aware.replace(tzinfo=None)
+            if match_range:
+                time_part = f"{match_range.group(1)} {match_range.group(2)}"
+                # Tenta parsear a data base para o dia de hoje ou o dia mencionado
+                base_date = dateparser.parse(processed_text.replace(match_range.group(0), '').strip(), 
+                                             settings={"DATE_ORDER": "DMY", "RELATIVE_BASE": now_aware, "TIMEZONE": "America/Sao_Paulo", "RETURN_AS_TIMEZONE_AWARE": False})
+                if not base_date:
+                    base_date = now_aware.replace(tzinfo=None) # Se não encontrar data, usa hoje
 
-            # --- PRIMEIRA TENTATIVA DE PARSEAMENTO (SEM PREFERIR FUTURO, COM ORDEM DIA/MÊS) ---
-            # Tentar parsear a data/hora sem forçar o futuro, para pegar o ano atual se aplicável
-            dt = dateparser.parse(
-                processed_text,
-                settings={
-                    "DATE_ORDER": "DMY", # Adicionar esta configuração para D/M/Y
-                    "TIMEZONE": "America/Sao_Paulo",
-                    "RETURN_AS_TIMEZONE_AWARE": False,
-                    "RELATIVE_BASE": now_aware, # Usar aware para a base
-                },
-            )
-            logger.info(f"Primeiro parse (sem prefer future): {dt} (tipo: {type(dt)}) para '{processed_text}'")
+                start_dt_naive = dateparser.parse(f"{base_date.strftime('%Y-%m-%d')} {match_range.group(1)}",
+                                                  settings={"DATE_ORDER": "DMY", "RELATIVE_BASE": now_aware, "TIMEZONE": "America/Sao_Paulo", "RETURN_AS_TIMEZONE_AWARE": False})
+                end_dt_naive = dateparser.parse(f"{base_date.strftime('%Y-%m-%d')} {match_range.group(2)}",
+                                                settings={"DATE_ORDER": "DMY", "RELATIVE_BASE": now_aware, "TIMEZONE": "America/Sao_Paulo", "RETURN_AS_TIMEZONE_AWARE": False})
+                
+                # Ajusta o dia do end_dt_naive se o horário de fim for menor que o de início (ex: 23h às 02h do dia seguinte)
+                if start_dt_naive and end_dt_naive and end_dt_naive < start_dt_naive:
+                    end_dt_naive += datetime.timedelta(days=1)
 
-            # Verificar se o parseamento foi bem-sucedido
-            if not dt or not isinstance(dt, datetime.datetime):
-                logger.warning(f"Data/hora não entendida na primeira tentativa para '{processed_text}'. dt: {dt}")
-                await update.message.reply_text(
-                    "❌ Não entendi *apenas* o dia e horário. Tente algo como:\n"
-                    "- Amanhã às 14h\n"
-                    "- 20/07 15h\n"
-                    "- Terça 10h"
-                )
-                return
 
-            # 2. Se a data/hora parseada estiver no passado, tentar novamente forçando o futuro
-            # Usamos uma pequena margem (e.g., 5 segundos) para evitar que um agendamento "agora" seja considerado passado
-            # devido a pequenas diferenças de milissegundos ou atrasos no processamento.
-            if dt <= now_naive - datetime.timedelta(seconds=5):
-                logger.info(f"Data/hora parseada ({dt}) está no passado. Tentando avançar para o futuro.")
-                dt_future = dateparser.parse(
+            if not start_dt_naive: # Se a regex não pegou ou falhou, tenta parsear como uma única data/hora
+                dt_parsed = dateparser.parse(
                     processed_text,
                     settings={
                         "DATE_ORDER": "DMY",
-                        "PREFER_DATES_FROM": "future", # Agora sim, preferir o futuro
                         "TIMEZONE": "America/Sao_Paulo",
                         "RETURN_AS_TIMEZONE_AWARE": False,
                         "RELATIVE_BASE": now_aware,
                     },
                 )
-                # Se dt_future é válido e realmente avançou (é maior que o now_naive), use-o
-                if dt_future and isinstance(dt_future, datetime.datetime) and dt_future > now_naive - datetime.timedelta(seconds=5):
-                    dt = dt_future
-                    logger.info(f"Data/hora avançada para o futuro: {dt}")
+                start_dt_naive = dt_parsed
+                logger.info(f"Parse como única data/hora (sem prefer future): {start_dt_naive} para '{processed_text}'")
+
+            if not start_dt_naive or not isinstance(start_dt_naive, datetime.datetime):
+                logger.warning(f"Data/hora não entendida para '{processed_text}'. dt: {start_dt_naive}")
+                await update.message.reply_text(
+                    "❌ Não entendi o dia e horário. Tente algo como:\n"
+                    "- Amanhã às 14h\n"
+                    "- 20/07 15h\n"
+                    "- 08:30 às 12:00h\n"
+                    "- Terça 10h"
+                )
+                return
+
+            # Garantir que a data/hora de início esteja no futuro
+            # Usamos uma pequena margem (e.g., 5 segundos) para evitar que um agendamento "agora" seja considerado passado
+            if start_dt_naive <= now_aware.replace(tzinfo=None) - datetime.timedelta(seconds=5):
+                logger.info(f"Data/hora de início parseada ({start_dt_naive}) está no passado. Tentando avançar para o futuro.")
+                dt_future = dateparser.parse(
+                    processed_text,
+                    settings={
+                        "DATE_ORDER": "DMY",
+                        "PREFER_DATES_FROM": "future",
+                        "TIMEZONE": "America/Sao_Paulo",
+                        "RETURN_AS_TIMEZONE_AWARE": False,
+                        "RELATIVE_BASE": now_aware,
+                    },
+                )
+                if dt_future and isinstance(dt_future, datetime.datetime) and dt_future > now_aware.replace(tzinfo=None) - datetime.timedelta(seconds=5):
+                    start_dt_naive = dt_future
+                    logger.info(f"Data/hora de início avançada para o futuro: {start_dt_naive}")
                 else:
-                    # Se mesmo com "prefer future" ainda está no passado ou não é válido
                     await update.message.reply_text(
                         "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
                     )
                     return
             
-            # Final check: se, após todas as tentativas, o tempo ainda está no passado (mesmo que por um fio)
-            if dt <= now_naive:
+            # Final check para start_dt_naive
+            if start_dt_naive <= now_aware.replace(tzinfo=None):
                 await update.message.reply_text(
-                    "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
+                    "❌ A data/hora de início agendada já passou. Por favor, agende para o futuro."
                 )
                 return
 
-            # Se a data/hora for válida e no futuro, guarda no user_data e pede a descrição
-            context.user_data["temp_datetime"] = dt.isoformat() # Salva como string ISO
+            # Se end_dt_naive foi encontrado, garantir que não está no passado em relação ao início
+            if end_dt_naive and end_dt_naive <= start_dt_naive:
+                # Se o fim é antes do início (no mesmo dia), assume que é no dia seguinte
+                end_dt_naive += datetime.timedelta(days=1)
+                logger.info(f"Data/hora de fim ajustada para o dia seguinte: {end_dt_naive}")
+
+
+            # Salva as datas/horas (início e fim) no user_data
+            context.user_data["temp_schedule"] = {
+                "start_datetime": start_dt_naive.isoformat(),
+                "end_datetime": end_dt_naive.isoformat() if end_dt_naive else None
+            }
             context.user_data["expecting"] = "schedule_description"
+
+            start_display = start_dt_naive.strftime('%d/%m/%Y às %H:%M')
+            end_display = ""
+            if end_dt_naive:
+                end_display = f" até {end_dt_naive.strftime('%H:%M')}"
+                # Calcula a duração
+                duration = end_dt_naive - start_dt_naive
+                hours, remainder = divmod(duration.total_seconds(), 3600)
+                minutes = remainder // 60
+                duration_str = ""
+                if hours > 0:
+                    duration_str += f"{int(hours)}h"
+                if minutes > 0:
+                    duration_str += f"{int(minutes)}min"
+                if duration_str:
+                    end_display += f" (Duração: {duration_str})"
+
             await update.message.reply_text(
-                f"Certo, agendado para *{dt.strftime('%d/%m/%Y às %H:%M')}*.\n"
+                f"Certo, agendado para *{start_display}{end_display}*.\n"
                 "Agora, qual a **descrição** da tarefa?"
             )
-            logger.info(f"Data/hora '{dt}' capturada. Pedindo descrição da tarefa.")
+            logger.info(f"Data/hora de início '{start_dt_naive}' e fim '{end_dt_naive}' (se houver) capturadas. Pedindo descrição da tarefa.")
             return
 
         except Exception as e:
             logger.error(f"Erro ao parsear data/hora '{text}': {e}", exc_info=True)
-            await update.message.reply_text(f"❌ Ocorreu um erro ao processar a data/hora: {e}")
+            await update.message.reply_text(f"❌ Ocorreu um erro ao processar a data/hora: {e}. Por favor, tente novamente com um formato claro como 'Amanhã 14h' ou '20/07 15h às 17h'.")
             context.user_data.pop("expecting", None)
             return
 
     # 3.3) Capturando a descrição da tarefa
     if state == "schedule_description":
         logger.info(f"Recebeu descrição da tarefa: '{text}'")
-        temp_dt_str = context.user_data.get("temp_datetime")
-        if not temp_dt_str:
-            logger.error("Erro: temp_datetime não encontrado ao tentar agendar descrição.")
+        temp_schedule_data = context.user_data.get("temp_schedule")
+        if not temp_schedule_data:
+            logger.error("Erro: temp_schedule não encontrado ao tentar agendar descrição.")
             await update.message.reply_text("❌ Ops, algo deu errado. Por favor, tente agendar novamente desde o início.")
             context.user_data.pop("expecting", None)
             return
 
-        # Converte a string ISO de volta para datetime (ainda naive)
-        task_datetime_naive = datetime.datetime.fromisoformat(temp_dt_str)
+        start_dt_naive = datetime.datetime.fromisoformat(temp_schedule_data["start_datetime"])
+        end_dt_naive = None
+        if temp_schedule_data["end_datetime"]:
+            end_dt_naive = datetime.datetime.fromisoformat(temp_schedule_data["end_datetime"])
 
-        # --- NOVO: TORNAR O DATETIME "AWARE" DO FUSO HORÁRIO DE SÃO PAULO ---
         sao_paulo_tz = pytz.timezone('America/Sao_Paulo')
-        task_datetime_aware = sao_paulo_tz.localize(task_datetime_naive)
         
+        # Tornar o datetime de início "aware"
+        task_start_datetime_aware = sao_paulo_tz.localize(start_dt_naive)
+        
+        # Tornar o datetime de fim "aware" se existir
+        task_end_datetime_aware = None
+        if end_dt_naive:
+            task_end_datetime_aware = sao_paulo_tz.localize(end_dt_naive)
+
         # Obter o horário atual (aware) para a verificação final
         now_aware_for_job_check = datetime.datetime.now(sao_paulo_tz)
 
-        # Verificação final de que a data/hora está no futuro (agora com objetos aware)
-        if task_datetime_aware <= now_aware_for_job_check:
+        # Verificação final de que a data/hora de início está no futuro
+        if task_start_datetime_aware <= now_aware_for_job_check:
             await update.message.reply_text(
-                "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
+                "❌ A data/hora de início agendada já passou. Por favor, agende para o futuro."
             )
             context.user_data.pop("expecting", None)
-            context.user_data.pop("temp_datetime", None)
+            context.user_data.pop("temp_schedule", None)
             return
 
-        # --- NOVO LOG AQUI: VERIFICA O HORÁRIO EXATO DE AGENDAMENTO (AGORA AWARE) ---
-        logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job. Horário do Job (Aware SP): {task_datetime_aware} | Horário atual (Aware SP): {now_aware_for_job_check}")
-
-        # Agendando o alerta com o JobQueue (passando o datetime aware)
+        # --- AGENDANDO O ALERTA DE INÍCIO ---
+        logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job de INÍCIO. Horário do Job (Aware SP): {task_start_datetime_aware} | Horário atual (Aware SP): {now_aware_for_job_check}")
         context.job_queue.run_once(
             send_task_alert,
-            when=task_datetime_aware, # AGORA PASSAMOS O DATETIME AWARE
+            when=task_start_datetime_aware,
             chat_id=chat_id,
-            data=text, # Passa a descrição da tarefa para a função de alerta
-            name=f"task_alert_{chat_id}_{task_datetime_aware.timestamp()}" # Nome único para o job
+            data={'description': text, 'alert_type': 'start'}, # Passa um dicionário com descrição e tipo de alerta
+            name=f"task_alert_start_{chat_id}_{task_start_datetime_aware.timestamp()}"
         )
-        logger.info(f"✅ [AGENDAMENTO] Alerta de Telegram agendado para '{text}' em '{task_datetime_aware}'.")
+        logger.info(f"✅ [AGENDAMENTO] Alerta de INÍCIO agendado para '{text}' em '{task_start_datetime_aware}'.")
+
+        # --- AGENDANDO O ALERTA DE FIM (SE HOUVER) ---
+        if task_end_datetime_aware:
+            # Garante que o alerta de fim não seja antes do alerta de início
+            if task_end_datetime_aware <= task_start_datetime_aware:
+                task_end_datetime_aware += datetime.timedelta(days=1) # Ajusta para o dia seguinte se for o caso de 23h as 02h
+
+            logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job de FIM. Horário do Job (Aware SP): {task_end_datetime_aware}")
+            context.job_queue.run_once(
+                send_task_alert,
+                when=task_end_datetime_aware,
+                chat_id=chat_id,
+                data={'description': text, 'alert_type': 'end'}, # Passa um dicionário com descrição e tipo de alerta
+                name=f"task_alert_end_{chat_id}_{task_end_datetime_aware.timestamp()}"
+            )
+            logger.info(f"✅ [AGENDAMENTO] Alerta de FIM agendado para '{text}' em '{task_end_datetime_aware}'.")
         
-        # Salvando a tarefa no dados.json (ainda salva o naive para compatibilidade, ou pode salvar o aware.
-        # Para consistência, vamos salvar o aware agora também)
+        # Salvando a tarefa no dados.json
         tarefas = user.setdefault("tarefas", [])
         tarefas.append({
             "activity": text,
             "done": False,
-            "when": task_datetime_aware.isoformat() # Salva a data/hora no formato ISO (agora aware)
+            "start_when": task_start_datetime_aware.isoformat(),
+            "end_when": task_end_datetime_aware.isoformat() if task_end_datetime_aware else None,
+            "completion_status": None, # Adiciona campo para feedback de conclusão
+            "reason_not_completed": None # Adiciona campo para motivo de não conclusão
         })
         save_data(db)
         logger.info(f"Tarefa '{text}' salva no DADOS_FILE para o usuário {chat_id}.")
 
+        start_display = task_start_datetime_aware.strftime('%d/%m/%Y às %H:%M')
+        end_display = ""
+        if task_end_datetime_aware:
+            end_display = f" até {task_end_datetime_aware.strftime('%H:%M')}"
+            # Calcula a duração para exibir na mensagem de confirmação
+            duration = task_end_datetime_aware - task_start_datetime_aware
+            hours, remainder = divmod(duration.total_seconds(), 3600)
+            minutes = remainder // 60
+            duration_str = ""
+            if hours > 0:
+                duration_str += f"{int(hours)}h"
+            if minutes > 0:
+                duration_str += f"{int(minutes)}min"
+            if duration_str:
+                end_display += f" (Duração: {duration_str})"
+
+
         await update.message.reply_text(
             f"📅 Tarefa “{text}” agendada para "
-            f"{task_datetime_aware.strftime('%d/%m/%Y às %H:%M')}!\n"
+            f"{start_display}{end_display}!\n"
             "Eu te avisarei no Telegram quando for a hora!"
         )
-        context.user_data.pop("expecting", None) # Finaliza o estado
-        context.user_data.pop("temp_datetime", None) # Limpa a data temporária
+        context.user_data.pop("expecting", None)
+        context.user_data.pop("temp_schedule", None)
         logger.info(f"Mensagem de sucesso de agendamento enviada para o usuário {chat_id}.")
         return
 
-    # 3.4) Fallback quando ninguém está aguardando texto
+    # 3.4) Trata feedback de conclusão da tarefa
+    if state == "task_completion_feedback":
+        # Este estado é tratado por callback_query, mas se o usuário digitar algo, informa.
+        await update.message.reply_text("Por favor, use os botões 'Sim, concluí!' ou 'Não, não concluí.' para responder sobre a tarefa.")
+        return
+
+    # 3.5) Fallback quando ninguém está aguardando texto
     logger.info(f"Texto '{text}' recebido sem estado 'expecting'.")
     await update.message.reply_text(
         "👉 Use /rotina para abrir o menu e escolher uma opção."
     )
 
 
-# 4) Marcar tarefa como concluída
+# 4) Marcar tarefa como concluída (agora também lida com feedback de conclusão)
 async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
 
     chat_id = str(query.message.chat_id)
     db = load_data()
-    tarefas = db.setdefault(chat_id, {}).setdefault("tarefas", [])
+    user_data = db.setdefault(chat_id, {})
+    tarefas = user_data.setdefault("tarefas", [])
 
-    # O índice vem do callback_data: "mark_done_X"
-    try:
-        idx = int(query.data.split("_")[2]) # Pega o índice após "mark_done_"
-    except (IndexError, ValueError):
-        logger.error(f"Erro ao parsear índice do callback_data: {query.data}")
-        await query.edit_message_text("❌ Erro ao identificar a tarefa.")
+    cmd = query.data
+    logger.info(f"Usuário {chat_id} clicou em callback: {cmd}.")
+
+    # Lógica para marcar tarefa como concluída (do menu "Minhas Tarefas")
+    if cmd.startswith("mark_done_"):
+        try:
+            idx = int(cmd.split("_")[2]) # Pega o índice após "mark_done_"
+        except (IndexError, ValueError):
+            logger.error(f"Erro ao parsear índice do callback_data: {cmd}")
+            await query.edit_message_text("❌ Erro ao identificar a tarefa.")
+            return
+
+        logger.info(f"Usuário {chat_id} tentou marcar tarefa {idx} como concluída.")
+        if 0 <= idx < len(tarefas):
+            tarefas[idx]["done"] = True
+            tarefas[idx]["completion_status"] = "completed_manually" # Registra como concluída manualmente
+            save_data(db)
+            await query.edit_message_text(
+                f"✅ Tarefa “{tarefas[idx]['activity']}” marcada como concluída!"
+            )
+            logger.info(f"Tarefa '{tarefas[idx]['activity']}' marcada como concluída para o usuário {chat_id}.")
+        else:
+            await query.edit_message_text("❌ Índice inválido para marcar como concluída.")
+            logger.warning(f"Tentativa de marcar tarefa com índice inválido {idx} para o usuário {chat_id}.")
+        return
+    
+    # Lógica para o feedback de conclusão (após o alerta de fim da tarefa)
+    if cmd == "feedback_yes":
+        task_text = context.user_data.get('current_task_for_feedback')
+        if task_text:
+            # Encontra a tarefa mais recente com essa descrição que não foi concluída
+            found_task_idx = -1
+            for i in reversed(range(len(tarefas))): # Procura da mais recente para a mais antiga
+                if tarefas[i]['activity'] == task_text and not tarefas[i].get('done'):
+                    found_task_idx = i
+                    break
+            
+            if found_task_idx != -1:
+                tarefas[found_task_idx]["done"] = True
+                tarefas[found_task_idx]["completion_status"] = "completed_on_time"
+                tarefas[found_task_idx]["reason_not_completed"] = None
+                save_data(db)
+                await query.edit_message_text(f"🎉 Ótimo! A tarefa '{task_text}' foi marcada como concluída. Parabéns!")
+                logger.info(f"Tarefa '{task_text}' marcada como concluída via feedback 'Sim'.")
+            else:
+                await query.edit_message_text("🤔 Não encontrei uma tarefa pendente com essa descrição para marcar como concluída.")
+                logger.warning(f"Não encontrei tarefa '{task_text}' para marcar como concluída via feedback 'Sim'.")
+        else:
+            await query.edit_message_text("🤔 Não sei a qual tarefa você se refere. Por favor, tente novamente.")
+            logger.warning("current_task_for_feedback não encontrado para feedback 'Sim'.")
+        
+        context.user_data.pop("expecting", None)
+        context.user_data.pop("current_task_for_feedback", None)
         return
 
-    logger.info(f"Usuário {chat_id} tentou marcar tarefa {idx} como concluída.")
-    if 0 <= idx < len(tarefas):
-        tarefas[idx]["done"] = True
-        save_data(db)
-        await query.edit_message_text(
-            f"✅ Tarefa “{tarefas[idx]['activity']}” marcada como concluída!"
-        )
-        logger.info(f"Tarefa '{tarefas[idx]['activity']}' marcada como concluída para o usuário {chat_id}.")
-    else:
-        await query.edit_message_text("❌ Índice inválido para marcar como concluída.")
-        logger.warning(f"Tentativa de marcar tarefa com índice inválido {idx} para o usuário {chat_id}.")
+    if cmd == "feedback_no":
+        task_text = context.user_data.get('current_task_for_feedback')
+        if task_text:
+            # Encontra a tarefa mais recente com essa descrição que não foi concluída
+            found_task_idx = -1
+            for i in reversed(range(len(tarefas))):
+                if tarefas[i]['activity'] == task_text and not tarefas[i].get('done'):
+                    found_task_idx = i
+                    break
+            
+            if found_task_idx != -1:
+                tarefas[found_task_idx]["completion_status"] = "not_completed"
+                save_data(db) # Salva o status de não concluída
+                context.user_data["expecting"] = "reason_for_not_completion"
+                context.user_data["task_idx_for_reason"] = found_task_idx # Guarda o índice da tarefa
+                await query.edit_message_text(f"😔 Entendido. Por favor, digite o motivo pelo qual a tarefa '{task_text}' não foi concluída:")
+                logger.info(f"Solicitando motivo de não conclusão para a tarefa '{task_text}'.")
+            else:
+                await query.edit_message_text("🤔 Não encontrei uma tarefa pendente com essa descrição para registrar o motivo.")
+                logger.warning(f"Não encontrei tarefa '{task_text}' para solicitar motivo de não conclusão via feedback 'Não'.")
+        else:
+            await query.edit_message_text("🤔 Não sei a qual tarefa você se refere. Por favor, tente novamente.")
+            logger.warning("current_task_for_feedback não encontrado para feedback 'Não'.")
+
+        context.user_data.pop("current_task_for_feedback", None) # Limpa, pois agora espera o motivo
+        return
+
+    # 3.6) Capturando o motivo de não conclusão
+    if state == "reason_for_not_completion":
+        task_idx = context.user_data.get("task_idx_for_reason")
+        if task_idx is not None and 0 <= task_idx < len(tarefas):
+            tarefas[task_idx]["reason_not_completed"] = text
+            save_data(db)
+            await update.message.reply_text(f"📝 Motivo registrado para a tarefa '{tarefas[task_idx]['activity']}': '{text}'.")
+            logger.info(f"Motivo de não conclusão registrado para tarefa {tarefas[task_idx]['activity']}.")
+        else:
+            await update.message.reply_text("❌ Ops, não consegui associar o motivo a uma tarefa. Por favor, tente novamente.")
+            logger.warning(f"Não foi possível associar o motivo '{text}' à tarefa com índice {task_idx}.")
+
+        context.user_data.pop("expecting", None)
+        context.user_data.pop("task_idx_for_reason", None)
+        return
