@@ -56,20 +56,26 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Criar Meta
     if cmd == "menu_meta":
         context.user_data["expecting"] = "meta"
-        await query.edit_message_text("✏️ Digite a descrição da meta semanal que deseja criar:")
+        await query.edit_message_text(
+            "✏️ Digite a descrição da meta semanal que deseja criar:"
+        )
         return
 
     # Agendar Tarefa
     if cmd == "menu_schedule":
         context.user_data["expecting"] = "schedule"
-        await query.edit_message_text("✏️ Em que dia e horário quer agendar? (ex: Amanhã 14h)")
+        await query.edit_message_text(
+            "✏️ Em que dia e horário quer agendar? (ex: Amanhã 14h)"
+        )
         return
 
     # Listar Metas
     if cmd == "menu_list_metas":
         metas = user.get("metas", [])
         if metas:
-            texto = "📈 Suas Metas Semanais:\n" + "\n".join(f"- {m['activity']}" for m in metas)
+            texto = "📈 Suas Metas Semanais:\n" + "\n".join(
+                f"- {m['activity']}" for m in metas
+            )
         else:
             texto = "📈 Você ainda não tem metas cadastradas."
         await query.edit_message_text(texto)
@@ -102,7 +108,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         metas = user.setdefault("metas", [])
         metas.append({"activity": atividade, "progress": 0, "target": None})
         save_data(db)
-        await update.message.reply_text(f"✅ Meta “{atividade}” salva com sucesso!")
+        await update.message.reply_text(
+            f"✅ Meta “{atividade}” salva com sucesso!"
+        )
         context.user_data.pop("expecting", None)
         return
 
@@ -146,7 +154,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             save_data(db)
 
             await update.message.reply_text(
-                f"📅 Tarefa “{text}” agendada para {start_dt:%d/%m} às {start_dt:%H:%M}!"
+                f"📅 Tarefa “{text}” agendada para "
+                f"{start_dt:%d/%m} às {start_dt:%H:%M}!"
             )
             context.user_data.pop("expecting", None)
             return
