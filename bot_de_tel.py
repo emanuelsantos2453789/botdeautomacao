@@ -13,10 +13,12 @@ from telegram.ext import (
 )
 
 from handlers import (
-    rotina,          # mostra o menu
-    rotina_callback, # trata cliques no menu
-    handle_text,     # trata texto após menu
+    rotina,         
+    rotina_callback, 
+    handle_text,     
 )
+
+
 from google_calendar import init_calendar_service
 
 def main():
@@ -24,6 +26,7 @@ def main():
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=logging.INFO
     )
+    
     logger = logging.getLogger(__name__)
 
     TOKEN       = os.getenv("BOT_TOKEN")
