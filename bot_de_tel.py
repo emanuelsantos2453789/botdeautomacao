@@ -1,6 +1,7 @@
 # Seu bot_de_tel.py (ou o arquivo principal)
 import os
 import logging
+from telegram import Update # Importe Update aqui
 from telegram.ext import (
     Application,
     CommandHandler,
