@@ -102,7 +102,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # ... código acima permanece igual
 
     # Bloco de agendamento corrigido:
-    if state == "schedule":
+  if state == "schedule":
         try:
             # Interpreta data e hora em linguagem natural
             dt = dateparser.parse(
@@ -149,8 +149,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         except Exception as e:
             await update.message.reply_text(f"❌ Erro ao agendar tarefa: {e}")
             return
-
-    # ... restante do handle_text continua normalmente
 
     # 3.3) Fallback quando ninguém está aguardando texto
     await update.message.reply_text(
