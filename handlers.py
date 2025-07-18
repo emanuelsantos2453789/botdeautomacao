@@ -41,7 +41,6 @@ async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
     chat_id = job.chat_id
     task_text = job.data
     
-    # --- NOVO LOG AQUI: VERIFICA QUANDO A FUNÇÃO DE ALERTA É CHAMADA ---
     logger.info(f"⏰ [ALERTA] Tentando enviar alerta para chat_id: {chat_id}, tarefa: '{task_text}'. Horário atual no job: {datetime.datetime.now()} (UTC).")
     
     try:
@@ -271,15 +270,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             context.user_data.pop("expecting", None)
             return
 
-        # Converte a string ISO de volta para datetime
-        task_datetime = datetime.datetime.fromisoformat(temp_dt_str)
+        # Converte a string ISO de volta para datetime (ainda naive)
+        task_datetime_naive = datetime.datetime.fromisoformat(temp_dt_str)
 
-        # --- AQUI ESTÁ A MAIOR MUDANÇA: AGENDANDO O ALERTA NO TELEGRAM ---
-        # Certifique-se de que a data/hora está no futuro para agendar o job
-        # Esta verificação é redundante se a lógica acima funcionou, mas é uma boa segurança.
+        # --- NOVO: TORNAR O DATETIME "AWARE" DO FUSO HORÁRIO DE SÃO PAULO ---
         sao_paulo_tz = pytz.timezone('America/Sao_Paulo')
-        now_naive = datetime.datetime.now(sao_paulo_tz).replace(tzinfo=None)
-        if task_datetime <= now_naive:
+        task_datetime_aware = sao_paulo_tz.localize(task_datetime_naive)
+        
+        # Obter o horário atual (aware) para a verificação final
+        now_aware_for_job_check = datetime.datetime.now(sao_paulo_tz)
+
+        # Verificação final de que a data/hora está no futuro (agora com objetos aware)
+        if task_datetime_aware <= now_aware_for_job_check:
             await update.message.reply_text(
                 "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
             )
@@ -287,32 +289,33 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             context.user_data.pop("temp_datetime", None)
             return
 
-        # --- NOVO LOG AQUI: VERIFICA O HORÁRIO EXATO DE AGENDAMENTO ---
-        logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job. Horário do Job: {task_datetime} | Horário atual (Naive SP): {now_naive}")
+        # --- NOVO LOG AQUI: VERIFICA O HORÁRIO EXATO DE AGENDAMENTO (AGORA AWARE) ---
+        logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job. Horário do Job (Aware SP): {task_datetime_aware} | Horário atual (Aware SP): {now_aware_for_job_check}")
 
-        # Agendando o alerta com o JobQueue
+        # Agendando o alerta com o JobQueue (passando o datetime aware)
         context.job_queue.run_once(
             send_task_alert,
-            when=task_datetime,
+            when=task_datetime_aware, # AGORA PASSAMOS O DATETIME AWARE
             chat_id=chat_id,
             data=text, # Passa a descrição da tarefa para a função de alerta
-            name=f"task_alert_{chat_id}_{task_datetime.timestamp()}" # Nome único para o job
+            name=f"task_alert_{chat_id}_{task_datetime_aware.timestamp()}" # Nome único para o job
         )
-        logger.info(f"✅ [AGENDAMENTO] Alerta de Telegram agendado para '{text}' em '{task_datetime}'.")
+        logger.info(f"✅ [AGENDAMENTO] Alerta de Telegram agendado para '{text}' em '{task_datetime_aware}'.")
         
-        # Salvando a tarefa no dados.json
+        # Salvando a tarefa no dados.json (ainda salva o naive para compatibilidade, ou pode salvar o aware.
+        # Para consistência, vamos salvar o aware agora também)
         tarefas = user.setdefault("tarefas", [])
         tarefas.append({
             "activity": text,
             "done": False,
-            "when": task_datetime.isoformat() # Salva a data/hora no formato ISO
+            "when": task_datetime_aware.isoformat() # Salva a data/hora no formato ISO (agora aware)
         })
         save_data(db)
         logger.info(f"Tarefa '{text}' salva no DADOS_FILE para o usuário {chat_id}.")
 
         await update.message.reply_text(
             f"📅 Tarefa “{text}” agendada para "
-            f"{task_datetime:%d/%m} às {task_datetime:%H:%M}!\n"
+            f"{task_datetime_aware.strftime('%d/%m/%Y às %H:%M')}!\n"
             "Eu te avisarei no Telegram quando for a hora!"
         )
         context.user_data.pop("expecting", None) # Finaliza o estado
@@ -337,8 +340,6 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     tarefas = db.setdefault(chat_id, {}).setdefault("tarefas", [])
 
     # O índice vem do callback_data: "mark_done_X"
-    # Certifique-se de que o message_id também é usado se você tiver múltiplos botões
-    # na mesma mensagem para evitar bugs em edições
     try:
         idx = int(query.data.split("_")[2]) # Pega o índice após "mark_done_"
     except (IndexError, ValueError):
