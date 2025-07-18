@@ -139,7 +139,7 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if state == "schedule":
         try:
             # Interpreta data e hora em linguagem natural
-           dt = dateparser.parse(
+            dt = dateparser.parse(
                 text,
                 settings={
                     "PREFER_DATES_FROM": "future",
@@ -149,15 +149,16 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 },
             )
 
-    if not dt or not isinstance(dt, datetime.datetime):
-        await update.message.reply_text(
-            "❌ Não entendi o dia e horário. Tente algo como:\n"
-            "- Amanhã às 14h\n"
-            "- 20/07 15h\n"
-            "- Terça 10h"
-        )
-        context.user_data.pop("expecting", None)
-        return
+            # THIS WAS THE PROBLEM: MOVED INSIDE THE TRY BLOCK
+            if not dt or not isinstance(dt, datetime.datetime):
+                await update.message.reply_text(
+                    "❌ Não entendi o dia e horário. Tente algo como:\n"
+                    "- Amanhã às 14h\n"
+                    "- 20/07 15h\n"
+                    "- Terça 10h"
+                )
+                context.user_data.pop("expecting", None)
+                return
 
             start_dt = dt
             end_dt = start_dt + datetime.timedelta(hours=1)
