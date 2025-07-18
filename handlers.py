@@ -2,6 +2,7 @@ import os
 import json
 import re
 import datetime
+import dateparser
 
 from telegram import (
     Update,
@@ -97,40 +98,52 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     # 3.2) Criando AGENDAMENTO
-    if state == "schedule":
-        m_day  = "amanhã" if "amanhã" in text.lower() else "hoje" if "hoje" in text.lower() else None
-        m_time = re.search(r"(\d{1,2})(?:h|:)?(\d{0,2})", text)
-        if not m_day or not m_time:
-            return await update.message.reply_text(
-                "❌ Não entendi. Use algo como “Amanhã 14h” ou “Hoje 9:30”."
+   if state == "schedule":
+    try:
+        # Tenta interpretar data e hora em linguagem natural
+        dt = dateparser.parse(
+            text,
+            settings={
+                "PREFER_DATES_FROM": "future",
+                "TIMEZONE": "America/Sao_Paulo",
+                "RETURN_AS_TIMEZONE_AWARE": False,
+            },
+        )
+
+        if not dt:
+            await update.message.reply_text(
+                "❌ Não entendi o dia e horário. Tente algo como:\n"
+                "- Amanhã às 14h\n"
+                "- 20/07 15h\n"
+                "- Terça 10h"
             )
+            return
 
-        h = int(m_time.group(1))
-        m = int(m_time.group(2) or 0)
-        # calcula datas
-        delta = 1 if m_day == "amanhã" else 0
-        ev_date = datetime.date.today() + datetime.timedelta(days=delta)
-        start_dt = datetime.datetime.combine(ev_date, datetime.time(h, m))
-        end_dt   = start_dt + datetime.timedelta(hours=1)
+        start_dt = dt
+        end_dt = start_dt + datetime.timedelta(hours=1)
 
-        # agenda no Google Calendar
+        # Agenda no Google Calendar
         srv = context.bot_data["calendar_service"]
         cal = context.bot_data["calendar_id"]
         create_event(srv, cal, text, start_dt, end_dt)
 
-        # persiste como tarefa
+        # Persiste no JSON
         tarefas = user.setdefault("tarefas", [])
         tarefas.append({
             "activity": text,
             "done": False,
-            "when": ev_date.strftime("%Y-%m-%dT%H:%M:%S")
+            "when": start_dt.strftime("%Y-%m-%dT%H:%M:%S")
         })
         save_data(db)
 
         await update.message.reply_text(
-            f"📅 Tarefa “{text}” agendada para {ev_date:%d/%m} às {h:02d}:{m:02d}!"
+            f"📅 Tarefa “{text}” agendada para {start_dt:%d/%m} às {start_dt:%H:%M}!"
         )
         context.user_data.pop("expecting", None)
+        return
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao agendar tarefa: {e}")
         return
 
     # 3.3) Fallback quando ninguém está aguardando texto
