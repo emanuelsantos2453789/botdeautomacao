@@ -102,6 +102,27 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     db = load_data()
     user = db.setdefault(chat_id, {})
 
+# 4) Marcar tarefa como concluída
+async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = str(query.message.chat_id)
+    db = load_data()
+    tarefas = db.setdefault(chat_id, {}).setdefault("tarefas", [])
+
+    # extrai índice de "done_{i}"
+    idx = int(query.data.split("_")[1])
+    if 0 <= idx < len(tarefas):
+        tarefas[idx]["done"] = True
+        save_data(db)
+        await query.edit_message_text(
+            f"✅ Tarefa “{tarefas[idx]['activity']}” marcada como concluída!"
+        )
+    else:
+        await query.edit_message_text("❌ Índice inválido.")
+
+
     # 3.1) Criando META
     if state == "meta":
         atividade = text
