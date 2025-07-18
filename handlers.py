@@ -63,20 +63,25 @@ async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
         # Se for o alerta de fim, perguntar sobre a conclusão
         if alert_type == 'end':
             # Adicionar um estado para esperar a resposta sobre a conclusão
-            context.user_data['expecting'] = 'task_completion_feedback'
-            context.user_data['current_task_for_feedback'] = task_text # Armazena a tarefa para feedback
-            
-            keyboard = [
-                [InlineKeyboardButton("Sim, concluí!", callback_data="feedback_yes")],
-                [InlineKeyboardButton("Não, não concluí.", callback_data="feedback_no")],
-            ]
-            markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"A tarefa '{task_text}' terminou. Você a concluiu?",
-                reply_markup=markup
-            )
-            logger.info(f"Pergunta de conclusão enviada para a tarefa '{task_text}' para o usuário {chat_id}.")
+            # Verifica se já não está esperando feedback para evitar sobreposição
+            if context.user_data.get('expecting') != 'task_completion_feedback':
+                context.user_data['expecting'] = 'task_completion_feedback'
+                context.user_data['current_task_for_feedback'] = task_text # Armazena a tarefa para feedback
+                
+                keyboard = [
+                    [InlineKeyboardButton("Sim, concluí!", callback_data="feedback_yes")],
+                    [InlineKeyboardButton("Não, não concluí.", callback_data="feedback_no")],
+                ]
+                markup = InlineKeyboardMarkup(keyboard)
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"A tarefa '{task_text}' terminou. Você a concluiu?",
+                    reply_markup=markup
+                )
+                logger.info(f"Pergunta de conclusão enviada para a tarefa '{task_text}' para o usuário {chat_id}.")
+            else:
+                logger.info(f"Já esperando feedback para outra tarefa. Pulando pergunta para '{task_text}'.")
+
 
     except Exception as e:
         logger.error(f"❌ [ALERTA] ERRO ao enviar alerta '{alert_type}' para chat_id: {chat_id}, tarefa: '{task_text}'. Erro: {e}", exc_info=True)
@@ -141,7 +146,9 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if cmd == "menu_list_tasks":
         tarefas = user.get("tarefas", [])
         if tarefas:
-            texto_tarefas = "📝 Suas Tarefas Agendadas:\n"
+            # Envia uma mensagem inicial para evitar editar uma mensagem sem botões
+            await query.edit_message_text("📝 Suas Tarefas Agendadas:")
+            
             for i, t in enumerate(tarefas):
                 start_when_str = ""
                 end_when_str = ""
@@ -157,7 +164,7 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     start_when_str = str(t.get('start_when'))
                 
                 # Processa a data/hora de fim (se existir)
-                if isinstance(t.get('end_when'), str):
+                if isinstance(t.get('end_when'), str) and t.get('end_when'): # Verifica se não é None ou string vazia
                     try:
                         end_dt_obj = datetime.datetime.fromisoformat(t['end_when'])
                         end_when_str = f" até {end_dt_obj.strftime('%H:%M')}"
@@ -165,23 +172,28 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         end_when_str = f" até {t['end_when']}"
                 
                 status = "✅ Concluída" if t.get('done') else "⏳ Pendente"
-                texto_tarefas += f"- {t['activity']} em {start_when_str}{end_when_str} [{status}]\n"
+                task_display_text = f"- {t['activity']} em {start_when_str}{end_when_str} [{status}]"
                 
                 # Adiciona botão para marcar como concluída (apenas se pendente)
                 if not t.get('done'):
                     keyboard = [[InlineKeyboardButton("Marcar como Concluída", callback_data=f"mark_done_{i}")]]
                     markup = InlineKeyboardMarkup(keyboard)
-                    # Envia cada tarefa como uma mensagem separada para ter seu próprio botão
                     await context.bot.send_message(
                         chat_id=query.message.chat_id,
-                        text=texto_tarefas,
+                        text=task_display_text,
                         reply_markup=markup
                     )
-                    texto_tarefas = "" # Limpa texto para a próxima iteração
-            if texto_tarefas: # Envia qualquer texto restante se não houver botões no último
+                else:
+                    # Se já concluída, apenas envia o texto sem botão
+                    await context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text=task_display_text
+                    )
+            
+            if not tarefas: # Se a lista de tarefas estiver vazia após o loop
                 await context.bot.send_message(
                     chat_id=query.message.chat_id,
-                    text=texto_tarefas
+                    text="📝 Você ainda não tem tarefas agendadas."
                 )
         else:
             await query.edit_message_text("📝 Você ainda não tem tarefas agendadas.")
@@ -220,35 +232,63 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             sao_paulo_tz = pytz.timezone('America/Sao_Paulo')
             now_aware = datetime.datetime.now(sao_paulo_tz)
 
-            # Tenta parsear para um período (ex: "08:30 às 12:00")
-            # dateparser.parse não tem um bom suporte nativo para "X to Y" em um único parse.
-            # Vamos tentar extrair duas datas/horas.
-
             start_dt_naive = None
             end_dt_naive = None
 
-            # Regex para tentar pegar "XX:YY às ZZ:WW" ou "XX:YY - ZZ:WW"
-            match_range = re.search(r'(\d{1,2}:\d{2})\s*(?:às|-)\s*(\d{1,2}:\d{2})', processed_text, re.IGNORECASE)
+            # Tenta encontrar um padrão de intervalo de tempo (ex: "10:00 às 12:00" ou "10:00-12:00")
+            # Isso é mais robusto para extrair os horários antes de passar para o dateparser
+            time_range_match = re.search(r'(\d{1,2}:\d{2})\s*(?:às|-)\s*(\d{1,2}:\d{2})', processed_text, re.IGNORECASE)
             
-            if match_range:
-                time_part = f"{match_range.group(1)} {match_range.group(2)}"
-                # Tenta parsear a data base para o dia de hoje ou o dia mencionado
-                base_date = dateparser.parse(processed_text.replace(match_range.group(0), '').strip(), 
-                                             settings={"DATE_ORDER": "DMY", "RELATIVE_BASE": now_aware, "TIMEZONE": "America/Sao_Paulo", "RETURN_AS_TIMEZONE_AWARE": False})
-                if not base_date:
-                    base_date = now_aware.replace(tzinfo=None) # Se não encontrar data, usa hoje
+            if time_range_match:
+                start_time_str = time_range_match.group(1)
+                end_time_str = time_range_match.group(2)
+                
+                # Remove a parte do horário da string original para parsear a data base
+                text_without_time_range = processed_text.replace(time_range_match.group(0), '').strip()
 
-                start_dt_naive = dateparser.parse(f"{base_date.strftime('%Y-%m-%d')} {match_range.group(1)}",
-                                                  settings={"DATE_ORDER": "DMY", "RELATIVE_BASE": now_aware, "TIMEZONE": "America/Sao_Paulo", "RETURN_AS_TIMEZONE_AWARE": False})
-                end_dt_naive = dateparser.parse(f"{base_date.strftime('%Y-%m-%d')} {match_range.group(2)}",
-                                                settings={"DATE_ORDER": "DMY", "RELATIVE_BASE": now_aware, "TIMEZONE": "America/Sao_Paulo", "RETURN_AS_TIMEZONE_AWARE": False})
+                # Tenta parsear a data (dia, mês, ano) da string restante
+                base_date_naive = dateparser.parse(
+                    text_without_time_range,
+                    settings={
+                        "DATE_ORDER": "DMY",
+                        "RELATIVE_BASE": now_aware,
+                        "TIMEZONE": "America/Sao_Paulo",
+                        "RETURN_AS_TIMEZONE_AWARE": False,
+                        "PREFER_DATES_FROM": "future" # Ajuda a pegar o dia correto se a data for ambígua
+                    }
+                )
+                
+                if not base_date_naive: # Se não encontrou uma data explícita, usa a data de hoje
+                    base_date_naive = now_aware.replace(tzinfo=None) # Garante que é naive para combinar com o parse
+
+                # Agora, combina a data base com os horários extraídos
+                start_dt_naive = dateparser.parse(
+                    f"{base_date_naive.strftime('%Y-%m-%d')} {start_time_str}",
+                    settings={
+                        "DATE_ORDER": "DMY",
+                        "RELATIVE_BASE": now_aware,
+                        "TIMEZONE": "America/Sao_Paulo",
+                        "RETURN_AS_TIMEZONE_AWARE": False,
+                    }
+                )
+                end_dt_naive = dateparser.parse(
+                    f"{base_date_naive.strftime('%Y-%m-%d')} {end_time_str}",
+                    settings={
+                        "DATE_ORDER": "DMY",
+                        "RELATIVE_BASE": now_aware,
+                        "TIMEZONE": "America/Sao_Paulo",
+                        "RETURN_AS_TIMEZONE_AWARE": False,
+                    }
+                )
                 
                 # Ajusta o dia do end_dt_naive se o horário de fim for menor que o de início (ex: 23h às 02h do dia seguinte)
                 if start_dt_naive and end_dt_naive and end_dt_naive < start_dt_naive:
                     end_dt_naive += datetime.timedelta(days=1)
+                
+                logger.info(f"Parse com intervalo: Start={start_dt_naive}, End={end_dt_naive} para '{processed_text}'")
 
-
-            if not start_dt_naive: # Se a regex não pegou ou falhou, tenta parsear como uma única data/hora
+            # Se não encontrou um intervalo, tenta parsear como uma única data/hora
+            if not start_dt_naive:
                 dt_parsed = dateparser.parse(
                     processed_text,
                     settings={
@@ -288,6 +328,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 )
                 if dt_future and isinstance(dt_future, datetime.datetime) and dt_future > now_aware.replace(tzinfo=None) - datetime.timedelta(seconds=5):
                     start_dt_naive = dt_future
+                    # Se o start_dt_naive mudou para o futuro, o end_dt_naive também precisa ser ajustado para o mesmo dia
+                    if end_dt_naive and end_dt_naive.date() < start_dt_naive.date():
+                         end_dt_naive = end_dt_naive.replace(year=start_dt_naive.year, month=start_dt_naive.month, day=start_dt_naive.day)
+                         if end_dt_naive < start_dt_naive: # Se ainda estiver antes, avança um dia
+                             end_dt_naive += datetime.timedelta(days=1)
+
                     logger.info(f"Data/hora de início avançada para o futuro: {start_dt_naive}")
                 else:
                     await update.message.reply_text(
@@ -301,13 +347,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     "❌ A data/hora de início agendada já passou. Por favor, agende para o futuro."
                 )
                 return
-
-            # Se end_dt_naive foi encontrado, garantir que não está no passado em relação ao início
-            if end_dt_naive and end_dt_naive <= start_dt_naive:
-                # Se o fim é antes do início (no mesmo dia), assume que é no dia seguinte
-                end_dt_naive += datetime.timedelta(days=1)
-                logger.info(f"Data/hora de fim ajustada para o dia seguinte: {end_dt_naive}")
-
 
             # Salva as datas/horas (início e fim) no user_data
             context.user_data["temp_schedule"] = {
@@ -455,7 +494,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("Por favor, use os botões 'Sim, concluí!' ou 'Não, não concluí.' para responder sobre a tarefa.")
         return
 
-    # 3.5) Fallback quando ninguém está aguardando texto
+    # 3.5) Capturando o motivo de não conclusão (se o usuário digitar)
+    if state == "reason_for_not_completion":
+        task_idx = context.user_data.get("task_idx_for_reason")
+        if task_idx is not None and 0 <= task_idx < len(tarefas):
+            tarefas[task_idx]["reason_not_completed"] = text
+            save_data(db)
+            await update.message.reply_text(f"📝 Motivo registrado para a tarefa '{tarefas[task_idx]['activity']}': '{text}'.")
+            logger.info(f"Motivo de não conclusão registrado para tarefa {tarefas[task_idx]['activity']}.")
+        else:
+            await update.message.reply_text("❌ Ops, não consegui associar o motivo a uma tarefa. Por favor, tente novamente.")
+            logger.warning(f"Não foi possível associar o motivo '{text}' à tarefa com índice {task_idx}.")
+
+        context.user_data.pop("expecting", None)
+        context.user_data.pop("task_idx_for_reason", None)
+        return
+
+    # 3.6) Fallback quando ninguém está aguardando texto
     logger.info(f"Texto '{text}' recebido sem estado 'expecting'.")
     await update.message.reply_text(
         "👉 Use /rotina para abrir o menu e escolher uma opção."
@@ -552,20 +607,4 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             logger.warning("current_task_for_feedback não encontrado para feedback 'Não'.")
 
         context.user_data.pop("current_task_for_feedback", None) # Limpa, pois agora espera o motivo
-        return
-
-    # 3.6) Capturando o motivo de não conclusão
-    if state == "reason_for_not_completion":
-        task_idx = context.user_data.get("task_idx_for_reason")
-        if task_idx is not None and 0 <= task_idx < len(tarefas):
-            tarefas[task_idx]["reason_not_completed"] = text
-            save_data(db)
-            await update.message.reply_text(f"📝 Motivo registrado para a tarefa '{tarefas[task_idx]['activity']}': '{text}'.")
-            logger.info(f"Motivo de não conclusão registrado para tarefa {tarefas[task_idx]['activity']}.")
-        else:
-            await update.message.reply_text("❌ Ops, não consegui associar o motivo a uma tarefa. Por favor, tente novamente.")
-            logger.warning(f"Não foi possível associar o motivo '{text}' à tarefa com índice {task_idx}.")
-
-        context.user_data.pop("expecting", None)
-        context.user_data.pop("task_idx_for_reason", None)
         return
