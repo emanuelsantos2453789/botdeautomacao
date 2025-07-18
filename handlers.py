@@ -4,7 +4,7 @@ import re
 import datetime
 import dateparser
 import logging
-import pytz # MANTENHA ESTA IMPORTAÇÃO
+import pytz
 
 from telegram import (
     Update,
@@ -15,6 +15,11 @@ from telegram.ext import ContextTypes, JobQueue
 
 DADOS_FILE = "dados.json"
 
+# Configura o logger para mostrar mais informações
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 
@@ -36,11 +41,18 @@ async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
     chat_id = job.chat_id
     task_text = job.data
     
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=f"⏰ Lembrete: Sua tarefa '{task_text}' está marcada para agora!"
-    )
-    logger.info(f"Alerta de tarefa '{task_text}' enviado para o usuário {chat_id}.")
+    # --- NOVO LOG AQUI: VERIFICA QUANDO A FUNÇÃO DE ALERTA É CHAMADA ---
+    logger.info(f"⏰ [ALERTA] Tentando enviar alerta para chat_id: {chat_id}, tarefa: '{task_text}'. Horário atual no job: {datetime.datetime.now()} (UTC).")
+    
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"⏰ Lembrete: Sua tarefa '{task_text}' está marcada para agora!"
+        )
+        logger.info(f"✅ [ALERTA] Alerta de tarefa '{task_text}' ENVIADO com sucesso para o usuário {chat_id}.")
+    except Exception as e:
+        logger.error(f"❌ [ALERTA] ERRO ao enviar alerta para chat_id: {chat_id}, tarefa: '{task_text}'. Erro: {e}", exc_info=True)
+
 
 # 1) Exibe menu principal
 async def rotina(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -203,8 +215,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             # 2. Se a data/hora parseada estiver no passado, tentar novamente forçando o futuro
             # Usamos uma pequena margem (e.g., 5 segundos) para evitar que um agendamento "agora" seja considerado passado
             # devido a pequenas diferenças de milissegundos ou atrasos no processamento.
-            # Se a data parseada é menor ou igual ao momento atual (com uma margem de 5 segundos para trás),
-            # significa que ela já "passou" ou está acontecendo "agora".
             if dt <= now_naive - datetime.timedelta(seconds=5):
                 logger.info(f"Data/hora parseada ({dt}) está no passado. Tentando avançar para o futuro.")
                 dt_future = dateparser.parse(
@@ -229,7 +239,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     return
             
             # Final check: se, após todas as tentativas, o tempo ainda está no passado (mesmo que por um fio)
-            # Isso pega casos onde a diferença é mínima, como 20:25:01 vs 20:25:00
             if dt <= now_naive:
                 await update.message.reply_text(
                     "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
@@ -278,6 +287,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             context.user_data.pop("temp_datetime", None)
             return
 
+        # --- NOVO LOG AQUI: VERIFICA O HORÁRIO EXATO DE AGENDAMENTO ---
+        logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job. Horário do Job: {task_datetime} | Horário atual (Naive SP): {now_naive}")
+
         # Agendando o alerta com o JobQueue
         context.job_queue.run_once(
             send_task_alert,
@@ -286,7 +298,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             data=text, # Passa a descrição da tarefa para a função de alerta
             name=f"task_alert_{chat_id}_{task_datetime.timestamp()}" # Nome único para o job
         )
-        logger.info(f"Alerta de Telegram agendado para '{text}' em '{task_datetime}'.")
+        logger.info(f"✅ [AGENDAMENTO] Alerta de Telegram agendado para '{text}' em '{task_datetime}'.")
         
         # Salvando a tarefa no dados.json
         tarefas = user.setdefault("tarefas", [])
