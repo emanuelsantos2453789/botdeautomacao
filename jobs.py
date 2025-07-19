@@ -43,41 +43,45 @@ async def send_daily_summary_job(context):
         tomorrow = today + datetime.timedelta(days=1)
 
         # Filtra tarefas para o dia atual e para amanhã
-        tasks_today = []
-        tasks_tomorrow = []
+        tasks_today_pending = []
+        tasks_tomorrow_scheduled = []
         
         for task in tarefas:
             try:
                 task_start_dt_naive = datetime.datetime.fromisoformat(task['start_when'])
                 task_start_dt_aware = SAO_PAULO_TZ.localize(task_start_dt_naive)
                 task_date = task_start_dt_aware.date()
-            except ValueError:
-                continue # Pula tarefas com datas inválidas
+            except (ValueError, TypeError):
+                context.application.logger.warning(f"Data de início inválida para a tarefa: {task.get('activity')}. Pulando.")
+                continue
 
-            if task_date == today and not task.get('done', False) and task_start_dt_aware > now_aware:
-                tasks_today.append(task)
+            # Tarefas de hoje que ainda não foram concluídas e que o tempo ainda não passou (ou passou muito pouco)
+            if task_date == today and not task.get('done', False) and (task_start_dt_aware > now_aware - datetime.timedelta(hours=12)): # Considera 12h para "atrasadas" no resumo noturno
+                tasks_today_pending.append(task)
+            # Tarefas agendadas para amanhã
             elif task_date == tomorrow:
-                tasks_tomorrow.append(task)
+                tasks_tomorrow_scheduled.append(task)
 
         msg_parts = []
         msg_parts.append(f"✨ *Seu Resumo Noturno* ({today.strftime('%d/%m/%Y')}):")
         msg_parts.append("\n_Prepare-se para um dia incrível!_")
 
-        # Tarefas pendentes para hoje (se houver)
-        if tasks_today:
+        if tasks_today_pending:
             msg_parts.append("\n⏰ Tarefas que *ainda* estão pendentes para HOJE:")
-            for t in sorted(tasks_today, key=lambda x: datetime.datetime.fromisoformat(x['start_when']).time()):
+            for t in sorted(tasks_today_pending, key=lambda x: datetime.datetime.fromisoformat(x['start_when']).time()):
                 start_time = datetime.datetime.fromisoformat(t['start_when']).strftime('%H:%M')
                 msg_parts.append(f"• {t['activity']} às {start_time}")
         
-        # Tarefas agendadas para amanhã
-        if tasks_tomorrow:
+        if tasks_tomorrow_scheduled:
             msg_parts.append(f"\n🗓️ *Sua agenda para AMANHÃ* ({tomorrow.strftime('%d/%m/%Y')}):")
-            for t in sorted(tasks_tomorrow, key=lambda x: datetime.datetime.fromisoformat(x['start_when']).time()):
+            for t in sorted(tasks_tomorrow_scheduled, key=lambda x: datetime.datetime.fromisoformat(x['start_when']).time()):
                 start_time = datetime.datetime.fromisoformat(t['start_when']).strftime('%H:%M')
                 end_time_str = ""
                 if t.get('end_when'):
-                    end_time_str = f" até {datetime.datetime.fromisoformat(t['end_when']).strftime('%H:%M')}"
+                    try:
+                        end_time_str = f" até {datetime.datetime.fromisoformat(t['end_when']).strftime('%H:%M')}"
+                    except (ValueError, TypeError):
+                        pass # Ignora se a data de fim for inválida
                 msg_parts.append(f"• {t['activity']} às {start_time}{end_time_str}")
         else:
             msg_parts.append("\n🎉 Nada agendado para amanhã ainda! Que tal planejar algo produtivo? 😉")
@@ -99,25 +103,18 @@ async def weekly_report_job(context):
     bot: Bot = context.bot
     data = load_data()
 
-    # Pega a data de hoje no fuso horário especificado
     now_aware = datetime.datetime.now(SAO_PAULO_TZ)
     today = now_aware.date()
-    # Calcula a data de 7 dias atrás para pegar a semana
-    start_of_week = today - datetime.timedelta(days=today.weekday()) # Volta para a segunda-feira da semana atual
-    if today.weekday() == 6: # Se for domingo, a semana começa há 6 dias
-        start_of_week = today - datetime.timedelta(days=6)
     
-    # Para o relatório semanal, considere a semana anterior completa
-    # (por exemplo, de segunda a domingo da semana passada)
-    # Se o job roda no domingo à noite, ele reporta a semana que está terminando.
+    # Reporta a semana *que terminou* (do domingo passado até hoje)
     report_end_date = today
-    report_start_date = report_end_date - datetime.timedelta(days=6) # Últimos 7 dias, incluindo hoje
+    report_start_date = report_end_date - datetime.timedelta(days=6)
 
     for chat_id, user in data.items():
         completed_tasks_week = []
         not_completed_tasks_week = []
         imprevistos_week = []
-        weekly_score = 0
+        weekly_score_contribution = 0 # Pontos ganhos *nesta semana*
         total_score = user.get("score", 0)
 
         for task in user.get("tarefas", []):
@@ -125,19 +122,22 @@ async def weekly_report_job(context):
                 task_start_dt_naive = datetime.datetime.fromisoformat(task['start_when'])
                 task_start_dt_aware = SAO_PAULO_TZ.localize(task_start_dt_naive)
                 task_date = task_start_dt_aware.date()
-            except ValueError:
-                continue # Pula tarefas com datas inválidas
+            except (ValueError, TypeError):
+                continue
 
             if report_start_date <= task_date <= report_end_date:
                 if task.get('completion_status') == 'completed_on_time' or task.get('completion_status') == 'completed_manually':
                     completed_tasks_week.append(task['activity'])
-                    weekly_score += 10 # Se a tarefa foi concluída esta semana, soma os pontos
+                    # Assumimos 10 pontos por tarefa concluída. Isso precisa ser consistente.
+                    # Se você armazenar os pontos ganhos por tarefa, some isso aqui.
+                    # Por enquanto, vou manter a lógica de 10 pontos fixos por tarefa concluída na semana.
+                    weekly_score_contribution += 10 
                 elif task.get('completion_status') == 'not_completed':
                     not_completed_tasks_week.append(task['activity'])
                     if task.get('reason_not_completed'):
                         imprevistos_week.append(f"- *{task['activity']}*: {task['reason_not_completed']}")
 
-        # --- Envio do resumo semanal via mensagem de texto (mais imediato e alegre) ---
+        # --- Envio do resumo semanal via mensagem de texto ---
         summary_message = f"🎉 *Seu Relatório Semanal de Brilho* ({report_start_date.strftime('%d/%m')} a {report_end_date.strftime('%d/%m')}): ✨\n\n"
         
         summary_message += "*📈 Metas da Semana:*\n"
@@ -166,7 +166,7 @@ async def weekly_report_job(context):
             summary_message += "\n*⚠️ Imprevistos e Desafios:*\n"
             summary_message += "\n".join(imprevistos_week) + "\n"
 
-        summary_message += f"\n📊 *Pontuação da Semana*: *{weekly_score}* pontos!\n"
+        summary_message += f"\n📊 *Pontuação da Semana*: *{weekly_score_contribution}* pontos!\n"
         summary_message += f"🏆 *Pontuação Total Acumulada*: *{total_score}* pontos!\n\n"
         summary_message += "Cada passo conta! Continue firme na sua jornada! Você é incrível! ✨"
 
@@ -186,12 +186,11 @@ async def weekly_report_job(context):
         pdf = canvas.Canvas(buffer, pagesize=A4)
         pdf.setTitle("Relatório Semanal de Produtividade")
         
-        # Cores e fontes para um visual mais alegre
-        pdf.setFillColorRGB(0.1, 0.4, 0.7) # Azul mais vibrante
+        pdf.setFillColorRGB(0.1, 0.4, 0.7)
         pdf.setFont("Helvetica-Bold", 24)
         pdf.drawString(50, 780, "🌟 Seu Relatório Semanal de Produtividade! 🌟")
         
-        pdf.setFillColorRGB(0, 0, 0) # Preto
+        pdf.setFillColorRGB(0, 0, 0)
         pdf.setFont("Helvetica", 12)
         y = 750
         
@@ -203,7 +202,7 @@ async def weekly_report_job(context):
         y -= 20
         pdf.setFont("Helvetica", 12)
         for m in user.get("metas", []):
-            if y < 100: pdf.showPage(); y = 780; pdf.setFont("Helvetica", 12) # Nova página se necessário
+            if y < 100: pdf.showPage(); y = 780; pdf.setFont("Helvetica", 12)
             pdf.drawString(60, y, f"• {m['activity']} (Progresso: {m.get('progress', 0)}/{m.get('target', 1)})")
             y -= 15
         if not metas_exist:
@@ -255,7 +254,7 @@ async def weekly_report_job(context):
         y -= 20
         pdf.setFont("Helvetica-Bold", 14)
         if y < 100: pdf.showPage(); y = 780; pdf.setFont("Helvetica-Bold", 14)
-        pdf.drawString(50, y, f"📊 Pontuação da Semana: {weekly_score} pontos")
+        pdf.drawString(50, y, f"📊 Pontuação da Semana: {weekly_score_contribution} pontos")
         y -= 20
         if y < 100: pdf.showPage(); y = 780; pdf.setFont("Helvetica-Bold", 14)
         pdf.drawString(50, y, f"🏆 Pontuação Total Acumulada: {total_score} pontos")
@@ -282,19 +281,16 @@ async def weekly_report_job(context):
 
 
 def weekly_backup_job(context):
-    bot: Bot = context.bot # Adicionado para usar o logger do bot/application
+    bot: Bot = context.bot
     data = load_data()
-    # Pega a hora atual no fuso horário especificado para o timestamp do backup
     timestamp = datetime.datetime.now(SAO_PAULO_TZ).strftime("%Y%m%d_%H%M")
 
     try:
-        # Backup JSON para o diretório da aplicação
         backup_json_path = os.path.join(APP_DIR, f"backup_{timestamp}.json")
         with open(backup_json_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         context.application.logger.info(f"Backup JSON criado em {backup_json_path}")
 
-        # Backup CSV para o diretório da aplicação
         rows = []
         for chat_id, user in data.items():
             for m in user.get("metas", []):
@@ -308,7 +304,8 @@ def weekly_backup_job(context):
                     "end_when": None,
                     "done": None,
                     "completion_status": None,
-                    "reason_not_completed": None
+                    "reason_not_completed": None,
+                    "job_names": None # Não se aplica a metas
                 })
             for t in user.get("tarefas", []):
                 rows.append({
@@ -320,8 +317,9 @@ def weekly_backup_job(context):
                     "end_when": t.get("end_when", ""),
                     "completion_status": t.get("completion_status", None),
                     "reason_not_completed": t.get("reason_not_completed", None),
-                    "progress": None, # Não se aplica a tarefas
-                    "target": None # Não se aplica a tarefas
+                    "progress": None,
+                    "target": None,
+                    "job_names": json.dumps(t.get("job_names", [])) if t.get("job_names") else "[]" # Salva como string JSON
                 })
 
         df = pd.DataFrame(rows)
@@ -329,13 +327,65 @@ def weekly_backup_job(context):
         df.to_csv(backup_csv_path, index=False)
         context.application.logger.info(f"Backup CSV criado em {backup_csv_path}")
 
-        # Opcional: Enviar os backups para o usuário (se o contexto tiver chat_id)
-        # Isso pode gerar muitos arquivos, então cuidado ao habilitar em produção.
-        # Para fins de demonstração, não enviarei os backups para o usuário automaticamente.
-        # Se quiser, pode adicionar:
-        # for chat_id in data.keys(): # Envia para todos os usuários com dados
-        #     await bot.send_document(chat_id=int(chat_id), document=open(backup_json_path, 'rb'), filename=os.path.basename(backup_json_path))
-        #     await bot.send_document(chat_id=int(chat_id), document=open(backup_csv_path, 'rb'), filename=os.path.basename(backup_csv_path))
-
     except Exception as e:
         context.application.logger.error(f"Erro ao realizar o backup semanal: {e}", exc_info=True)
+
+# NOVO: Job para limpar tarefas antigas/concluídas do JSON
+async def clean_up_old_tasks_job(context):
+    data = load_data()
+    now_aware = datetime.datetime.now(SAO_PAULO_TZ)
+    
+    tasks_cleaned_count = 0
+    for chat_id, user_data in data.items():
+        if "tarefas" in user_data:
+            # Mantém apenas as tarefas que não estão 'done' ou que são recentes (últimos 30 dias)
+            # Remove tarefas concluídas que sejam mais antigas que 7 dias
+            # Remove tarefas não concluídas que sejam mais antigas que 30 dias
+            
+            # Ajustei a lógica de remoção:
+            # Se uma tarefa estiver "done", ela é mantida por 7 dias. Após isso, é removida.
+            # Se uma tarefa não estiver "done" e o horário de fim (ou início se não tiver fim) já passou há mais de 30 dias, é removida.
+            # Tarefas recorrentes que não foram "done" mas já passaram, serão mantidas na lista de não-concluídas, mas seu job será removido.
+            
+            updated_tasks = []
+            for task in user_data["tarefas"]:
+                try:
+                    task_start_dt_naive = datetime.datetime.fromisoformat(task['start_when'])
+                    task_dt_aware = SAO_PAULO_TZ.localize(task_start_dt_naive)
+                    
+                    # Calcula a data de referência para remoção
+                    reference_date = task_dt_aware
+                    if task.get('end_when'):
+                        end_dt_naive = datetime.datetime.fromisoformat(task['end_when'])
+                        end_dt_aware = SAO_PAULO_TZ.localize(end_dt_naive)
+                        reference_date = end_dt_aware
+                        
+                    if task.get('done', False):
+                        # Se concluída, remove se tiver mais de 7 dias
+                        if (now_aware - reference_date).days > 7:
+                            tasks_cleaned_count += 1
+                            # Não precisamos cancelar jobs aqui, eles já deveriam ter rodado ou sido cancelados ao marcar como done
+                            continue # Não adiciona à lista
+                    elif task.get('completion_status') == 'not_completed':
+                        # Se não concluída, remove se tiver mais de 30 dias
+                        if (now_aware - reference_date).days > 30:
+                            tasks_cleaned_count += 1
+                            continue # Não adiciona à lista
+                    elif reference_date < now_aware - datetime.timedelta(days=30):
+                         # Tarefas pendentes muito antigas (mais de 30 dias atrás) que não foram marcadas
+                         tasks_cleaned_count += 1
+                         continue
+                         
+                except (ValueError, TypeError):
+                    context.application.logger.warning(f"Tarefa com data inválida encontrada durante a limpeza: {task.get('activity')}. Removendo.")
+                    tasks_cleaned_count += 1
+                    continue # Remove tarefas com datas inválidas
+                
+                updated_tasks.append(task)
+            user_data["tarefas"] = updated_tasks
+    
+    if tasks_cleaned_count > 0:
+        save_data(data)
+        context.application.logger.info(f"Limpeza de tarefas concluída. {tasks_cleaned_count} tarefas antigas foram removidas.")
+    else:
+        context.application.logger.info("Nenhuma tarefa antiga para limpar.")
