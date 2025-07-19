@@ -6,6 +6,7 @@ import dateparser
 import logging
 import pytz
 import asyncio # Adicionado para usar sleep se necessário
+from collections import defaultdict # Para o Pomodoro
 
 from telegram import (
     Update,
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Fuso horário padrão para o bot
 SAO_PAULO_TZ = pytz.timezone('America/Sao_Paulo')
 
+# --- Funções de Dados ---
 def load_data():
     if not os.path.exists(DADOS_FILE):
         return {}
@@ -39,7 +41,7 @@ def save_data(data):
     with open(DADOS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# --- Função para enviar o alerta da tarefa ---
+# --- Gerenciamento de Tarefas e Jobs ---
 async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     chat_id = job.chat_id
@@ -71,14 +73,9 @@ async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
 
         # Se for o alerta de fim, perguntar sobre a conclusão
         if alert_type == 'end':
-            # Para garantir que a pergunta seja sobre a tarefa correta,
-            # vamos usar o task_idx que foi passado no job.data
-            
             if task_idx is not None:
                 # O estado 'expecting' aqui é menos importante, pois a resposta virá via callback_query.
-                # No entanto, podemos usá-lo para evitar que o handle_text geral capture a resposta.
                 context.user_data['expecting'] = 'task_completion_feedback' 
-                # Não precisamos de 'current_task_idx_for_feedback' se o feedback vier com o idx no callback_data
                 
                 keyboard = [
                     [InlineKeyboardButton("Sim, concluí! 🎉", callback_data=f"feedback_yes_{task_idx}")],
@@ -101,25 +98,25 @@ async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ [ALERTA] ERRO geral ao enviar alerta '{alert_type}' para chat_id: {chat_id}, tarefa: '{task_text}'. Erro: {e}", exc_info=True)
 
 
-# 1) Exibe menu principal
+# --- Menu Principal e Callbacks ---
 async def rotina(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [InlineKeyboardButton("📈 Criar Meta", callback_data="menu_meta")],
         [InlineKeyboardButton("⏰ Agendar Tarefa", callback_data="menu_schedule")],
         [InlineKeyboardButton("📋 Minhas Metas", callback_data="menu_list_metas")],
         [InlineKeyboardButton("📝 Minhas Tarefas", callback_data="menu_list_tasks")],
-        [InlineKeyboardButton("🗓️ Agendar Rotina Semanal", callback_data="menu_weekly_routine")], # Novo botão
+        [InlineKeyboardButton("🗓️ Agendar Rotina Semanal", callback_data="menu_weekly_routine")],
         [InlineKeyboardButton("📊 Feedback do Dia", callback_data="menu_daily_feedback")],
+        [InlineKeyboardButton("🍅 Pomodoro", callback_data="menu_pomodoro")], # Novo botão Pomodoro
     ]
     markup = InlineKeyboardMarkup(keyboard)
-    await (update.message or update.callback_query.message).reply_text( # Responde à mensagem ou à query
+    await (update.message or update.callback_query.message).reply_text(
         "👋 Olá! Sou seu assistente de rotina! Vamos organizar seu dia? Escolha uma opção para começarmos! ✨",
         reply_markup=markup
     )
     logger.info(f"Usuário {update.effective_user.id} abriu o menu /rotina.")
 
 
-# 2) Trata clique no menu
 async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -130,7 +127,6 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user = db.setdefault(user_id, {})
     logger.info(f"Usuário {user_id} clicou em {cmd}.")
 
-    # Criar Meta
     if cmd == "menu_meta":
         context.user_data["expecting"] = "meta"
         await query.edit_message_text(
@@ -138,7 +134,6 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    # Agendar Tarefa (Primeiro passo: pedir data/hora)
     if cmd == "menu_schedule":
         context.user_data["expecting"] = "schedule_datetime"
         await query.edit_message_text(
@@ -147,17 +142,13 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    # Listar Metas
     if cmd == "menu_list_metas":
         metas = user.get("metas", [])
         if metas:
             text_lines = ["📈 Suas Metas Incríveis:"]
-            for i, m in enumerate(metas):
-                text_lines.append(f"• {m['activity']}")
-            
-            # Adicionar botões para apagar metas
             keyboard_rows = []
             for i, m in enumerate(metas):
+                text_lines.append(f"• {m['activity']}")
                 keyboard_rows.append([InlineKeyboardButton(f"🗑️ Apagar '{m['activity']}'", callback_data=f"delete_meta_{i}")])
             
             markup = InlineKeyboardMarkup(keyboard_rows)
@@ -167,103 +158,93 @@ async def rotina_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.edit_message_text("📈 Você ainda não definiu nenhuma meta. Que tal criar uma agora para impulsionar seus objetivos? 💪")
         return
     
-    # Listar Tarefas
     if cmd == "menu_list_tasks":
         tarefas = user.get("tarefas", [])
         if not tarefas:
             await query.edit_message_text("📝 Você ainda não tem tarefas agendadas. Que tal agendar uma agora e dar um passo à frente? 🚀")
             return
         
-        await query.edit_message_text("📝 Suas Tarefas Agendadas:") # Mensagem inicial
+        await query.edit_message_text("📝 Suas Tarefas Agendadas:")
         
-        # Filtra tarefas futuras ou tarefas do dia atual que ainda não foram concluídas
         now_aware = datetime.datetime.now(SAO_PAULO_TZ)
         
-        # Ordena as tarefas por data de início para exibir de forma organizada
-        tarefas_ordenadas = sorted(tarefas, key=lambda x: datetime.datetime.fromisoformat(x['start_when']))
-
-        has_tasks_to_display = False
-        for i, t in enumerate(tarefas_ordenadas):
-            start_dt_obj_naive = datetime.datetime.fromisoformat(t['start_when'])
-            start_dt_obj_aware = SAO_PAULO_TZ.localize(start_dt_obj_naive)
-            
-            # Considera a tarefa se for futura ou se for do dia atual e ainda não tiver terminado
-            # ou se for uma tarefa do passado recente que ainda não foi marcada como concluída
-            # Considerar tasks que começaram hoje ou estão no futuro E que não foram concluídas
-            if start_dt_obj_aware.date() >= now_aware.date() or not t.get('done', False):
-                has_tasks_to_display = True
-                start_when_str = start_dt_obj_aware.strftime("%d/%m/%Y às %H:%M")
-                end_when_str = ""
-                
-                if isinstance(t.get('end_when'), str) and t.get('end_when'):
-                    try:
-                        end_dt_obj_naive = datetime.datetime.fromisoformat(t['end_when'])
-                        end_dt_obj_aware = SAO_PAULO_TZ.localize(end_dt_obj_naive)
-                        end_when_str = f" até {end_dt_obj_aware.strftime('%H:%M')}"
-                    except ValueError:
-                        end_when_str = f" até {t['end_when']}"
-                
-                status = ""
-                if t.get('done'):
-                    status = "✅ Concluída!"
-                elif t.get('completion_status') == 'not_completed':
-                    status = "❌ Não Concluída"
-                    if t.get('reason_not_completed'):
-                        status += f" (Motivo: {t['reason_not_completed']})"
-                elif start_dt_obj_aware < now_aware:
-                     status = "⏳ Atrasada!"
-                else:
-                    status = "⏳ Pendente"
-
-
-                task_display_text = f"• *{t['activity']}* em {start_when_str}{end_when_str} [{status}]"
-                
-                # Adiciona botão para marcar como concluída (apenas se pendente e não estiver atrasada)
-                # ou se a tarefa já passou e não foi marcada
-                if not t.get('done') and t.get('completion_status') != 'not_completed':
-                    keyboard = [[InlineKeyboardButton("Marcar como Concluída ✅", callback_data=f"mark_done_{i}")]]
-                    markup = InlineKeyboardMarkup(keyboard)
-                    await context.bot.send_message(
-                        chat_id=query.message.chat_id,
-                        text=task_display_text,
-                        reply_markup=markup,
-                        parse_mode='Markdown'
-                    )
-                else:
-                    await context.bot.send_message(
-                        chat_id=query.message.chat_id,
-                        text=task_display_text,
-                        parse_mode='Markdown'
-                    )
+        # Filtra tarefas não concluídas e futuras
+        filtered_tasks = [
+            (i, t) for i, t in enumerate(tarefas) 
+            if not t.get('done', False)
+        ]
         
-        if not has_tasks_to_display:
+        # Ordena as tarefas por data de início
+        tarefas_ordenadas = sorted(filtered_tasks, 
+                                    key=lambda x: datetime.datetime.fromisoformat(x[1]['start_when']) 
+                                    if isinstance(x[1].get('start_when'), str) else datetime.datetime.min)
+
+        if not tarefas_ordenadas:
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text="🎉 Parabéns! Você não tem tarefas pendentes ou futuras no momento. Que organização! ✨"
             )
+            return
+
+        for original_idx, t in tarefas_ordenadas:
+            start_dt_obj_naive = datetime.datetime.fromisoformat(t['start_when'])
+            start_dt_obj_aware = SAO_PAULO_TZ.localize(start_dt_obj_naive)
+            
+            start_when_str = start_dt_obj_aware.strftime("%d/%m/%Y às %H:%M")
+            end_when_str = ""
+            
+            if isinstance(t.get('end_when'), str) and t.get('end_when'):
+                try:
+                    end_dt_obj_naive = datetime.datetime.fromisoformat(t['end_when'])
+                    end_dt_obj_aware = SAO_PAULO_TZ.localize(end_dt_obj_naive)
+                    end_when_str = f" até {end_dt_obj_aware.strftime('%H:%M')}"
+                except ValueError:
+                    end_when_str = f" até {t['end_when']}" # Fallback
+            
+            status = ""
+            if t.get('done'):
+                status = "✅ Concluída!"
+            elif t.get('completion_status') == 'not_completed':
+                status = "❌ Não Concluída"
+                if t.get('reason_not_completed'):
+                    status += f" (Motivo: {t['reason_not_completed']})"
+            elif start_dt_obj_aware < now_aware:
+                 status = "⏳ Atrasada!"
+            else:
+                status = "⏳ Pendente"
+
+            task_display_text = f"• *{t['activity']}* em {start_when_str}{end_when_str} [{status}]"
+            
+            keyboard_buttons = []
+            if not t.get('done') and t.get('completion_status') != 'not_completed':
+                keyboard_buttons.append(InlineKeyboardButton("Marcar como Concluída ✅", callback_data=f"mark_done_{original_idx}"))
+            
+            keyboard_buttons.append(InlineKeyboardButton("Apagar 🗑️", callback_data=f"delete_task_{original_idx}")) # NOVO: Botão Apagar Tarefa
+            
+            markup = InlineKeyboardMarkup([keyboard_buttons])
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=task_display_text,
+                reply_markup=markup,
+                parse_mode='Markdown'
+            )
         return
     
-    # Novo: Agendar Rotina Semanal
     if cmd == "menu_weekly_routine":
-        await handle_weekly_routine_input(update, context) # Chama o handler para pedir a rotina
+        await handle_weekly_routine_input(update, context)
         return
 
-    # Feedback Diário
     if cmd == "menu_daily_feedback":
-        await send_daily_feedback(update, context) # Chama a função de feedback diário
+        await send_daily_feedback(update, context)
+        return
+    
+    # NOVO: Menu Pomodoro
+    if cmd == "menu_pomodoro":
+        await pomodoro_menu(update, context)
         return
 
 
-# Novo: Handler para receber a rotina semanal completa
-async def handle_weekly_routine_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.user_data["expecting"] = "weekly_routine_text"
-    await (update.message or update.callback_query.message).reply_text(
-        "📚 Me envie sua rotina semanal completa, dia a dia e com horários, como no exemplo que você me deu! "
-        "Vou te ajudar a transformá-la em tarefas agendadas. Capricha nos detalhes! ✨"
-    )
-    logger.info(f"Usuário {update.effective_user.id} solicitou input de rotina semanal.")
-
-# 3) Trata texto livre após menu
+# --- Handlers de Texto ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text.strip()
     state = context.user_data.get("expecting")
@@ -272,11 +253,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user = db.setdefault(chat_id, {})
     logger.info(f"Usuário {chat_id} enviou texto: '{text}' no estado '{state}'.")
 
-    # 3.1) Criando META
+    # Criando META
     if state == "meta":
         atividade = text
         metas = user.setdefault("metas", [])
-        metas.append({"activity": atividade, "progress": 0, "target": 1}) # target 1 por padrão para metas semanais
+        metas.append({"activity": atividade, "progress": 0, "target": 1})
         save_data(db)
         await update.message.reply_text(
             f"✅ Meta *“{atividade}”* salva com sucesso! Agora, vamos trabalhar para alcançá-la! 💪 Que energia! ✨"
@@ -285,7 +266,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.info(f"Meta '{atividade}' salva para o usuário {chat_id}.")
         return
 
-    # 3.2) Capturando APENAS a data e hora para agendamento (início e/ou fim)
+    # Capturando APENAS a data e hora para agendamento (início e/ou fim)
     if state == "schedule_datetime":
         logger.info(f"Tentando parsear data/hora: '{text}'")
         try:
@@ -293,7 +274,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             logger.info(f"Texto pré-processado para dateparser: '{processed_text}'")
             
             now_aware = datetime.datetime.now(SAO_PAULO_TZ)
-            now_naive = now_aware.replace(tzinfo=None) # Current datetime without timezone for comparisons
+            now_naive = now_aware.replace(tzinfo=None)
 
             start_dt_naive = None
             end_dt_naive = None
@@ -311,7 +292,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 text_without_time_range = processed_text.replace(time_range_match.group(0), '').strip()
 
                 parsed_date_only = dateparser.parse(
-                    text_without_time_range or "hoje", # Se não houver data, assume "hoje"
+                    text_without_time_range or "hoje",
                     settings={
                         "DATE_ORDER": "DMY",
                         "RELATIVE_BASE": now_aware,
@@ -319,8 +300,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         "RETURN_AS_TIMEZONE_AWARE": False,
                         "PREFER_DATES_FROM": "current_period",
                         "STRICT_PARSING": False,
-                        "LANGUAGES": ['pt']
-                    }
+                    },
+                    languages=['pt'] # CORREÇÃO: LANGUAGES passado como argumento separado
                 )
                 
                 if not parsed_date_only or not isinstance(parsed_date_only, datetime.datetime):
@@ -333,10 +314,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 temp_start_dt = datetime.datetime.combine(base_date_naive, datetime.datetime.strptime(start_time_str, '%H:%M').time())
                 temp_end_dt = datetime.datetime.combine(base_date_naive, datetime.datetime.strptime(end_time_str, '%H:%M').time())
 
-                # Ajusta para o dia seguinte se a hora de início for no passado no dia de hoje
                 if temp_start_dt < now_naive - datetime.timedelta(minutes=1):
                     temp_start_dt += datetime.timedelta(days=1)
-                    if temp_end_dt <= temp_start_dt.replace(hour=temp_start_dt.hour, minute=temp_start_dt.minute, second=0, microsecond=0): # Se o fim for antes ou igual ao novo início, ajusta o fim
+                    if temp_end_dt <= temp_start_dt.replace(hour=temp_start_dt.hour, minute=temp_start_dt.minute, second=0, microsecond=0):
                         temp_end_dt += datetime.timedelta(days=1)
                 
                 start_dt_naive = temp_start_dt
@@ -344,7 +324,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 
                 logger.info(f"Parse com intervalo (regex): Start={start_dt_naive}, End={end_dt_naive} para '{processed_text}'")
 
-            if not start_dt_naive: # Se não encontrou intervalo, tenta parsear como uma única data/hora
+            if not start_dt_naive:
                 dt_parsed = dateparser.parse(
                     processed_text,
                     settings={
@@ -352,14 +332,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         "TIMEZONE": SAO_PAULO_TZ.zone,
                         "RETURN_AS_TIMEZONE_AWARE": False,
                         "RELATIVE_BASE": now_aware,
-                        "PREFER_DATES_FROM": "current_period", # Prefere o período atual, mas pode ser ajustado
+                        "PREFER_DATES_FROM": "current_period",
                         "STRICT_PARSING": False,
-                        "LANGUAGES": ['pt']
                     },
+                    languages=['pt'] # CORREÇÃO: LANGUAGES passado como argumento separado
                 )
                 
                 if dt_parsed and isinstance(dt_parsed, datetime.datetime):
-                    # Se a data/hora parseada for no passado, tenta preferir o futuro
                     if dt_parsed <= now_naive - datetime.timedelta(minutes=1):
                         dt_parsed_future = dateparser.parse(
                             processed_text,
@@ -368,10 +347,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                                 "TIMEZONE": SAO_PAULO_TZ.zone,
                                 "RETURN_AS_TIMEZONE_AWARE": False,
                                 "RELATIVE_BASE": now_aware,
-                                "PREFER_DATES_FROM": "future", # Tenta forçar para o futuro
+                                "PREFER_DATES_FROM": "future",
                                 "STRICT_PARSING": False,
-                                "LANGUAGES": ['pt']
                             },
+                            languages=['pt'] # CORREÇÃO: LANGUAGES passado como argumento separado
                         )
                         if dt_parsed_future and dt_parsed_future > now_naive:
                             start_dt_naive = dt_parsed_future
@@ -439,7 +418,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             context.user_data.pop("expecting", None)
             return
 
-    # 3.3) Capturando a descrição da tarefa
+    # Capturando a descrição da tarefa
     if state == "schedule_description":
         logger.info(f"Recebeu descrição da tarefa: '{text}'")
         temp_schedule_data = context.user_data.get("temp_schedule")
@@ -469,8 +448,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             context.user_data.pop("temp_schedule", None)
             return
         
-        # Salvando a tarefa no dados.json ANTES de agendar os jobs
-        # Isso garante que o índice da tarefa seja estável
         tarefas = user.setdefault("tarefas", [])
         new_task_data = {
             "activity": text,
@@ -478,57 +455,63 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             "start_when": task_start_datetime_aware.isoformat(),
             "end_when": task_end_datetime_aware.isoformat() if task_end_datetime_aware else None,
             "completion_status": None,
-            "reason_not_completed": None
+            "reason_not_completed": None,
+            "job_names": [] # Para armazenar os nomes dos jobs para esta tarefa
         }
         tarefas.append(new_task_data)
-        save_data(db)
-        # O índice da tarefa recém-adicionada é (len(tarefas) - 1)
         current_task_idx = len(tarefas) - 1
         logger.info(f"Tarefa '{text}' salva no DADOS_FILE com índice {current_task_idx} para o usuário {chat_id}.")
 
+        # --- Agendando Alertas ---
+        job_names_for_task = []
 
-        # --- NOVO: AGENDANDO O ALERTA DE 30 MINUTOS ANTES ---
+        # Alerta de 30 minutos antes
         pre_start_time = task_start_datetime_aware - datetime.timedelta(minutes=30)
-        if pre_start_time > now_aware_for_job_check: # Apenas agenda se o lembrete ainda estiver no futuro
-            logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job de PRÉ-INÍCIO (30 min antes). Horário do Job (Aware SP): {pre_start_time}")
+        if pre_start_time > now_aware_for_job_check:
+            pre_start_job_name = f"task_alert_pre_start_{chat_id}_{task_start_datetime_aware.timestamp()}_{current_task_idx}"
             context.job_queue.run_once(
                 send_task_alert,
                 when=pre_start_time,
                 chat_id=chat_id,
                 data={'description': text, 'alert_type': 'pre_start', 'task_idx': current_task_idx},
-                name=f"task_alert_pre_start_{chat_id}_{task_start_datetime_aware.timestamp()}"
+                name=pre_start_job_name
             )
+            job_names_for_task.append(pre_start_job_name)
             logger.info(f"✅ [AGENDAMENTO] Alerta de PRÉ-INÍCIO agendado para '{text}' em '{pre_start_time}'.")
         else:
             logger.info(f"🚫 [AGENDAMENTO] Alerta de PRÉ-INÍCIO para '{text}' no passado, não agendado.")
 
-        # --- AGENDANDO O ALERTA DE INÍCIO ---
-        logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job de INÍCIO. Horário do Job (Aware SP): {task_start_datetime_aware} | Horário atual (Aware SP): {now_aware_for_job_check}")
+        # Alerta de Início
+        start_job_name = f"task_alert_start_{chat_id}_{task_start_datetime_aware.timestamp()}_{current_task_idx}"
         context.job_queue.run_once(
             send_task_alert,
             when=task_start_datetime_aware,
             chat_id=chat_id,
             data={'description': text, 'alert_type': 'start', 'task_idx': current_task_idx},
-            name=f"task_alert_start_{chat_id}_{task_start_datetime_aware.timestamp()}"
+            name=start_job_name
         )
+        job_names_for_task.append(start_job_name)
         logger.info(f"✅ [AGENDAMENTO] Alerta de INÍCIO agendado para '{text}' em '{task_start_datetime_aware}'.")
 
-        # --- AGENDANDO O ALERTA DE FIM (SE HOUVER) ---
+        # Alerta de Fim (se houver)
         if task_end_datetime_aware:
-            # Garante que o fim seja no futuro ou após o início (evita fim antes do início se data/hora forem iguais)
             if task_end_datetime_aware <= task_start_datetime_aware:
                 task_end_datetime_aware += datetime.timedelta(days=1)
-
-            logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job de FIM. Horário do Job (Aware SP): {task_end_datetime_aware}")
+            
+            end_job_name = f"task_alert_end_{chat_id}_{task_end_datetime_aware.timestamp()}_{current_task_idx}"
             context.job_queue.run_once(
                 send_task_alert,
                 when=task_end_datetime_aware,
                 chat_id=chat_id,
                 data={'description': text, 'alert_type': 'end', 'task_idx': current_task_idx},
-                name=f"task_alert_end_{chat_id}_{task_end_datetime_aware.timestamp()}"
+                name=end_job_name
             )
+            job_names_for_task.append(end_job_name)
             logger.info(f"✅ [AGENDAMENTO] Alerta de FIM agendado para '{text}' em '{task_end_datetime_aware}'.")
         
+        tarefas[current_task_idx]["job_names"] = job_names_for_task # Salva os nomes dos jobs na tarefa
+        save_data(db) # Salva os dados novamente com os nomes dos jobs
+
         start_display = task_start_datetime_aware.strftime('%d/%m/%Y às %H:%M')
         end_display = ""
         if task_end_datetime_aware:
@@ -554,7 +537,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.info(f"Mensagem de sucesso de agendamento enviada para o usuário {chat_id}.")
         return
 
-    # 3.4) Tratando a entrada da Rotina Semanal
+    # Tratando a entrada da Rotina Semanal
     if state == "weekly_routine_text":
         logger.info(f"Recebeu texto da rotina semanal: '{text}'")
         await update.message.reply_text("✨ Certo! Analisando sua rotina... Isso pode levar um instante! 😉")
@@ -583,18 +566,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             context.user_data.pop("expecting", None)
         return
 
-    # 3.5) Capturando o motivo de não conclusão (se o usuário digitar)
+    # Capturando o motivo de não conclusão (se o usuário digitar)
     if state == "reason_for_not_completion":
         task_idx = context.user_data.get("task_idx_for_reason")
         
-        db = load_data() # Recarrega para garantir dados mais recentes
+        db = load_data()
         user_data = db.setdefault(chat_id, {})
         tarefas = user_data.setdefault("tarefas", [])
 
         if task_idx is not None and 0 <= task_idx < len(tarefas):
             tarefas[task_idx]["reason_not_completed"] = text
-            tarefas[task_idx]["completion_status"] = "not_completed" # Define como 'not_completed' explicitamente
-            tarefas[task_idx]["done"] = False # Garante que não está marcada como done
+            tarefas[task_idx]["completion_status"] = "not_completed"
+            tarefas[task_idx]["done"] = False
             save_data(db)
             await update.message.reply_text(f"📝 Entendido! O motivo *'{text}'* foi registrado para a tarefa *'{tarefas[task_idx]['activity']}'*. Vamos aprender com isso e seguir em frente! 💪")
             logger.info(f"Motivo de não conclusão registrado para tarefa {tarefas[task_idx]['activity']}.")
@@ -605,14 +588,40 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         context.user_data.pop("expecting", None)
         context.user_data.pop("task_idx_for_reason", None)
         return
+    
+    # Tratamento de input para Pomodoro (se estiver configurando tempos)
+    if state and state.startswith("pomodoro_set_"):
+        try:
+            value = int(text)
+            if not (1 <= value <= 120): # Limite razoável para minutos
+                await update.message.reply_text("Por favor, digite um número entre 1 e 120 minutos.")
+                return
 
-    # 3.6) Fallback quando ninguém está aguardando texto
+            if state == "pomodoro_set_focus":
+                user_data["pomodoro_focus_time"] = value
+                await update.message.reply_text(f"✅ Tempo de foco definido para *{value} minutos*! Que tal definir o descanso agora?", parse_mode='Markdown')
+            elif state == "pomodoro_set_short_break":
+                user_data["pomodoro_short_break_time"] = value
+                await update.message.reply_text(f"✅ Descanso curto definido para *{value} minutos*! Quase lá...", parse_mode='Markdown')
+            elif state == "pomodoro_set_long_break":
+                user_data["pomodoro_long_break_time"] = value
+                await update.message.reply_text(f"✅ Descanso longo definido para *{value} minutos*! Tudo pronto! 🎉", parse_mode='Markdown')
+            
+            save_data(db)
+            context.user_data.pop("expecting", None)
+            await pomodoro_menu(update, context) # Volta ao menu do Pomodoro
+            return
+        except ValueError:
+            await update.message.reply_text("Ops! Por favor, digite um *número válido* de minutos. Ex: '25'.", parse_mode='Markdown')
+            return
+
+
     logger.info(f"Texto '{text}' recebido sem estado 'expecting'.")
     await update.message.reply_text(
         "👉 Use /rotina para abrir o menu e escolher uma opção. Estou aqui para te ajudar a organizar seu dia e alcançar seus objetivos! 😉"
     )
 
-# 4) Marcar tarefa como concluída (agora também lida com feedback de conclusão)
+# --- Callbacks de Ação (Concluir, Apagar) ---
 async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -625,10 +634,9 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     cmd = query.data
     logger.info(f"Usuário {chat_id} clicou em callback: {cmd}.")
 
-    # Lógica para marcar tarefa como concluída (do menu "Minhas Tarefas")
     if cmd.startswith("mark_done_"):
         try:
-            idx = int(cmd.split("_")[2]) # Pega o índice após "mark_done_"
+            idx = int(cmd.split("_")[2])
         except (IndexError, ValueError):
             logger.error(f"Erro ao parsear índice do callback_data: {cmd}")
             await query.edit_message_text("❌ Erro ao identificar a tarefa. Por favor, tente novamente!")
@@ -636,79 +644,87 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         logger.info(f"Usuário {chat_id} tentou marcar tarefa {idx} como concluída via botão 'Marcar como Concluída'.")
         if 0 <= idx < len(tarefas):
-            tarefas[idx]["done"] = True
-            tarefas[idx]["completion_status"] = "completed_manually" # Registra como concluída manualmente
-            tarefas[idx]["reason_not_completed"] = None # Limpa o motivo se for marcado manualmente
-            
-            # Adiciona pontos pela conclusão da tarefa
-            user_data["score"] = user_data.get("score", 0) + 10 # Exemplo: 10 pontos por tarefa concluída
-            logger.info(f"Usuário {chat_id} ganhou 10 pontos. Pontuação atual: {user_data['score']}.")
+            if not tarefas[idx].get('done'): # Só marca se não estiver concluída
+                tarefas[idx]["done"] = True
+                tarefas[idx]["completion_status"] = "completed_manually"
+                tarefas[idx]["reason_not_completed"] = None
+                
+                user_data["score"] = user_data.get("score", 0) + 10
+                logger.info(f"Usuário {chat_id} ganhou 10 pontos. Pontuação atual: {user_data['score']}.")
 
-            save_data(db)
-            await query.edit_message_text(
-                f"✅ EBA! Tarefa *“{tarefas[idx]['activity']}”* marcada como concluída! Mandou muito bem! 🎉 Você ganhou 10 pontos! 🌟"
-            )
-            logger.info(f"Tarefa '{tarefas[idx]['activity']}' marcada como concluída para o usuário {chat_id}.")
+                # Cancela os jobs pendentes para esta tarefa
+                cancel_task_jobs(chat_id, tarefas[idx].get("job_names", []), context.job_queue)
+                
+                save_data(db)
+                await query.edit_message_text(
+                    f"✅ EBA! Tarefa *“{tarefas[idx]['activity']}”* marcada como concluída! Mandou muito bem! 🎉 Você ganhou 10 pontos! 🌟"
+                )
+                logger.info(f"Tarefa '{tarefas[idx]['activity']}' marcada como concluída para o usuário {chat_id}.")
+            else:
+                await query.edit_message_text(f"Esta tarefa já foi marcada como concluída! Que eficiência! 😉")
         else:
             await query.edit_message_text("❌ Não encontrei essa tarefa para marcar como concluída. Ela pode já ter sido concluída ou apagada. 🤔")
             logger.warning(f"Tentativa de marcar tarefa com índice inválido {idx} para o usuário {chat_id}.")
         return
     
-    # Lógica para o feedback de conclusão (após o alerta de fim da tarefa)
     if cmd.startswith("feedback_yes_"):
         try:
-            task_idx = int(cmd.split("_")[2]) # Pega o índice da tarefa
+            task_idx = int(cmd.split("_")[2])
         except (IndexError, ValueError):
             logger.error(f"Erro ao parsear índice do callback_data: {cmd}")
             await query.edit_message_text("❌ Erro ao identificar a tarefa para feedback. Que pena! 😔")
             return
 
         if task_idx is not None and 0 <= task_idx < len(tarefas):
-            tarefas[task_idx]["done"] = True
-            tarefas[task_idx]["completion_status"] = "completed_on_time"
-            tarefas[task_idx]["reason_not_completed"] = None # Limpa o motivo se for concluída
-            
-            # --- NOVO: Lógica de Pontuação ---
-            # Adiciona pontos pela conclusão da tarefa
-            user_data["score"] = user_data.get("score", 0) + 10 # Exemplo: 10 pontos por tarefa concluída
-            logger.info(f"Usuário {chat_id} ganhou 10 pontos. Pontuação atual: {user_data['score']}.")
+            if not tarefas[task_idx].get('done'): # Só marca se não estiver concluída
+                tarefas[task_idx]["done"] = True
+                tarefas[task_idx]["completion_status"] = "completed_on_time"
+                tarefas[task_idx]["reason_not_completed"] = None
+                
+                user_data["score"] = user_data.get("score", 0) + 10
+                logger.info(f"Usuário {chat_id} ganhou 10 pontos. Pontuação atual: {user_data['score']}.")
 
-            save_data(db)
-            await query.edit_message_text(f"🎉 PARABÉNS! A tarefa *'{tarefas[task_idx]['activity']}'* foi marcada como concluída! Que orgulho! Você ganhou 10 pontos! 🌟 Continue assim! 💪")
-            logger.info(f"Tarefa '{tarefas[task_idx]['activity']}' marcada como concluída via feedback 'Sim'.")
+                cancel_task_jobs(chat_id, tarefas[task_idx].get("job_names", []), context.job_queue)
+
+                save_data(db)
+                await query.edit_message_text(f"🎉 PARABÉNS! A tarefa *'{tarefas[task_idx]['activity']}'* foi marcada como concluída! Que orgulho! Você ganhou 10 pontos! 🌟 Continue assim! 💪")
+                logger.info(f"Tarefa '{tarefas[task_idx]['activity']}' marcada como concluída via feedback 'Sim'.")
+            else:
+                await query.edit_message_text(f"Esta tarefa já foi marcada como concluída! Ótimo trabalho! 😉")
         else:
             await query.edit_message_text("🤔 Não encontrei a tarefa para marcar como concluída. Ela pode já ter sido concluída ou apagada. Por favor, tente novamente!")
             logger.warning(f"Não encontrei tarefa com índice {task_idx} para marcar como concluída via feedback 'Sim'.")
             
         context.user_data.pop("expecting", None)
-        # context.user_data.pop("current_task_idx_for_feedback", None) # Não necessário se o índice for passado pelo callback
         return
 
     if cmd.startswith("feedback_no_"):
         try:
-            task_idx = int(cmd.split("_")[2]) # Pega o índice da tarefa
+            task_idx = int(cmd.split("_")[2])
         except (IndexError, ValueError):
             logger.error(f"Erro ao parsear índice do callback_data: {cmd}")
             await query.edit_message_text("❌ Erro ao identificar a tarefa para feedback. Oops! 😔")
             return
 
         if task_idx is not None and 0 <= task_idx < len(tarefas):
-            tarefas[task_idx]["completion_status"] = "not_completed"
-            tarefas[task_idx]["done"] = False # Garante que não está marcada como done
-            save_data(db) # Salva o status de não concluída
-            
-            context.user_data["expecting"] = "reason_for_not_completion"
-            context.user_data["task_idx_for_reason"] = task_idx # Guarda o índice da tarefa
-            await query.edit_message_text(f"😔 Ah, que pena! A tarefa *'{tarefas[task_idx]['activity']}'* não foi concluída. Por favor, digite o motivo: foi um imprevisto, falta de tempo, ou algo mais? Me conta para aprendermos juntos! 👇")
-            logger.info(f"Solicitando motivo de não conclusão para a tarefa '{tarefas[task_idx]['activity']}'.")
+            if not tarefas[task_idx].get('done'): # Só marca se não estiver concluída
+                tarefas[task_idx]["completion_status"] = "not_completed"
+                tarefas[task_idx]["done"] = False
+                save_data(db) # Salva o status de não concluída
+                
+                cancel_task_jobs(chat_id, tarefas[task_idx].get("job_names", []), context.job_queue) # Cancela para evitar mais alertas
+                
+                context.user_data["expecting"] = "reason_for_not_completion"
+                context.user_data["task_idx_for_reason"] = task_idx # Guarda o índice da tarefa
+                await query.edit_message_text(f"😔 Ah, que pena! A tarefa *'{tarefas[task_idx]['activity']}'* não foi concluída. Por favor, digite o motivo: foi um imprevisto, falta de tempo, ou algo mais? Me conta para aprendermos juntos! 👇")
+                logger.info(f"Solicitando motivo de não conclusão para a tarefa '{tarefas[task_idx]['activity']}'.")
+            else:
+                await query.edit_message_text(f"Esta tarefa já foi concluída! Que bom! 😊")
         else:
             await query.edit_message_text("🤔 Não encontrei a tarefa para registrar o motivo. Ela pode já ter sido concluída ou apagada. Por favor, tente novamente!")
             logger.warning(f"Não encontrei tarefa com índice {task_idx} para solicitar motivo de não conclusão via feedback 'Não'.")
-
-        # context.user_data.pop("current_task_idx_for_feedback", None) # Não necessário se o índice for passado pelo callback
         return
 
-# Novo: Handler para apagar metas
 async def delete_meta_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -739,7 +755,57 @@ async def delete_meta_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.warning(f"Tentativa de apagar meta com índice inválido {idx} para o usuário {chat_id}.")
         return
 
-# --- NOVO: Função para enviar o feedback diário (chamada pelo jobs.py e pelo menu) ---
+# NOVO: Apagar Tarefas
+async def delete_task_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = str(query.message.chat_id)
+    db = load_data()
+    user_data = db.setdefault(chat_id, {})
+    tarefas = user_data.setdefault("tarefas", [])
+
+    cmd = query.data
+    logger.info(f"Usuário {chat_id} clicou em callback: {cmd}.")
+
+    if cmd.startswith("delete_task_"):
+        try:
+            idx = int(cmd.split("_")[2])
+        except (IndexError, ValueError):
+            logger.error(f"Erro ao parsear índice do callback_data para apagar tarefa: {cmd}")
+            await query.edit_message_text("❌ Erro ao identificar a tarefa para apagar. Que pena! 😔")
+            return
+
+        if 0 <= idx < len(tarefas):
+            deleted_task = tarefas.pop(idx)
+            
+            # Cancela os jobs associados a essa tarefa
+            cancel_task_jobs(chat_id, deleted_task.get("job_names", []), context.job_queue)
+            
+            save_data(db)
+            await query.edit_message_text(f"🗑️ Tarefa *'{deleted_task['activity']}'* apagada com sucesso! Menos uma preocupação! 😉")
+            logger.info(f"Tarefa '{deleted_task['activity']}' apagada para o usuário {chat_id}.")
+        else:
+            await query.edit_message_text("🤔 Essa tarefa não existe mais ou o índice está incorreto. Tente listar suas tarefas novamente!")
+            logger.warning(f"Tentativa de apagar tarefa com índice inválido {idx} para o usuário {chat_id}.")
+        return
+
+# Helper para cancelar jobs de uma tarefa
+def cancel_task_jobs(chat_id: str, job_names: list, job_queue: JobQueue):
+    """Cancela todos os jobs do JobQueue com os nomes fornecidos para um chat_id específico."""
+    jobs_to_remove = []
+    for job_name in job_names:
+        current_jobs = job_queue.get_jobs_by_name(job_name)
+        for job in current_jobs:
+            if job.chat_id == int(chat_id):
+                job.schedule_removal()
+                jobs_to_remove.append(job.name)
+                logger.info(f"Job '{job.name}' cancelado para o chat {chat_id}.")
+    
+    # Opcional: remover os nomes dos jobs do registro da tarefa no JSON (já feito ao remover a tarefa)
+    # ou, se a tarefa não for removida, limpar a lista de job_names dela.
+
+# --- Funções de Feedback e Relatórios ---
 async def send_daily_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     db = load_data()
@@ -753,22 +819,23 @@ async def send_daily_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE
     not_completed_tasks_today = []
     imprevistos_today = []
     
-    daily_score = 0
+    daily_score_this_feedback = 0 # Score gerado para o dia especificamente
 
     for task in tarefas:
         try:
             task_start_dt_naive = datetime.datetime.fromisoformat(task['start_when'])
             task_start_dt_aware = SAO_PAULO_TZ.localize(task_start_dt_naive)
             task_date = task_start_dt_aware.date()
-        except ValueError:
+        except (ValueError, TypeError): # Adicionado TypeError caso start_when não seja string
             logger.warning(f"Data de início inválida para a tarefa: {task.get('activity')}. Pulando.")
-            continue # Pula esta tarefa se a data for inválida
+            continue
             
         if task_date == today:
             if task.get('completion_status') == 'completed_on_time' or task.get('completion_status') == 'completed_manually':
                 completed_tasks_today.append(task['activity'])
-                # A pontuação já é adicionada no mark_done_callback, aqui apenas somamos para o feedback
-                daily_score += 10 # Recontar para o feedback diário, ou pegar de um campo 'points_earned' na tarefa
+                # Considera que 10 pontos são por tarefa concluída, já somados ao score geral
+                # Este é o score *do dia* para o feedback, não adiciona novamente ao total
+                daily_score_this_feedback += 10 
             elif task.get('completion_status') == 'not_completed':
                 not_completed_tasks_today.append(task['activity'])
                 if task.get('reason_not_completed'):
@@ -787,11 +854,10 @@ async def send_daily_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE
     if imprevistos_today:
         feedback_message += "⚠️ Imprevistos e Desafios de Hoje:\n" + "\n".join(imprevistos_today) + "\n\n"
         
-    feedback_message += f"📊 Pontuação do Dia: *{daily_score}* pontos\n"
-    feedback_message += f"🏆 Pontuação Total: *{user_data.get('score', 0)}* pontos\n\n"
+    feedback_message += f"📊 Pontuação do Dia: *{daily_score_this_feedback}* pontos\n"
+    feedback_message += f"🏆 Pontuação Total Acumulada: *{user_data.get('score', 0)}* pontos\n\n"
     feedback_message += "Lembre-se: Cada esforço conta! Continue firme! Você é incrível! ✨"
     
-    # Decidir se edita a mensagem (se veio de callback) ou envia nova (se veio de comando ou job)
     if update.callback_query:
         await update.callback_query.edit_message_text(text=feedback_message, parse_mode='Markdown')
     else:
@@ -799,7 +865,15 @@ async def send_daily_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE
     logger.info(f"Feedback diário enviado para o usuário {chat_id}.")
 
 
-# --- NOVO: Função para parsing de rotina semanal ---
+# --- Parsing de Rotina Semanal ---
+async def handle_weekly_routine_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data["expecting"] = "weekly_routine_text"
+    await (update.message or update.callback_query.message).reply_text(
+        "📚 Me envie sua rotina semanal completa, dia a dia e com horários, como no exemplo que você me deu! "
+        "Vou te ajudar a transformá-la em tarefas agendadas. Capricha nos detalhes! ✨"
+    )
+    logger.info(f"Usuário {update.effective_user.id} solicitou input de rotina semanal.")
+
 async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job_queue: JobQueue) -> int:
     lines = routine_text.split('\n')
     current_day = None
@@ -807,7 +881,6 @@ async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job
     
     now_aware = datetime.datetime.now(SAO_PAULO_TZ)
 
-    # Mapeamento de nomes de dias em português para números (0=Segunda, 6=Domingo)
     day_mapping = {
         "segunda-feira": 0, "segunda": 0,
         "terça-feira": 1, "terça": 1,
@@ -835,47 +908,57 @@ async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job
                 break
         
         if current_day is not None:
-            # Tenta detectar horário e atividade
             time_activity_match = re.search(r'(\d{1,2}h(?:(\d{2}))?)\s*(?:[-–—]\s*(\d{1,2}h(?:(\d{2}))?))?:\s*(.+)', line, re.IGNORECASE)
             
             if time_activity_match:
-                start_time_str = time_activity_match.group(1)
-                end_time_str = time_activity_match.group(3)
+                start_time_str_raw = time_activity_match.group(1)
+                end_time_str_raw = time_activity_match.group(3)
                 activity_description = time_activity_match.group(5).strip()
                 
-                # Formata os horários para 'HH:MM'
-                start_h = int(re.search(r'(\d{1,2})h', start_time_str).group(1))
-                start_m = int(re.search(r'h(\d{2})', start_time_str).group(1)) if re.search(r'h(\d{2})', start_time_str) else 0
-                formatted_start_time = f"{start_h:02d}:{start_m:02d}"
+                # Funções auxiliares para formatar horas
+                def parse_time_str(time_str):
+                    if not time_str: return None
+                    match = re.match(r'(\d{1,2})h(?:(\d{2}))?', time_str)
+                    if match:
+                        h = int(match.group(1))
+                        m = int(match.group(2)) if match.group(2) else 0
+                        return datetime.time(h, m)
+                    return None
 
-                formatted_end_time = None
-                if end_time_str:
-                    end_h = int(re.search(r'(\d{1,2})h', end_time_str).group(1))
-                    end_m = int(re.search(r'h(\d{2})', end_time_str).group(1)) if re.search(r'h(\d{2})', end_time_str) else 0
-                    formatted_end_time = f"{end_h:02d}:{end_m:02d}"
+                start_time_obj = parse_time_str(start_time_str_raw)
+                end_time_obj = parse_time_str(end_time_str_raw)
 
-                logger.info(f"   Detectado: Dia={current_day}, Início={formatted_start_time}, Fim={formatted_end_time}, Atividade='{activity_description}'")
+                if not start_time_obj:
+                    logger.warning(f"Não foi possível parsear hora de início da linha: {line}")
+                    continue
+
+                logger.info(f"   Detectado: Dia={current_day}, Início={start_time_obj.strftime('%H:%M')}, Fim={end_time_obj.strftime('%H:%M') if end_time_obj else 'N/A'}, Atividade='{activity_description}'")
 
                 # Calcula a próxima ocorrência da tarefa
+                # Encontrar a próxima data que seja 'current_day'
                 target_date = now_aware.date()
-                while target_date.weekday() != current_day: # weekday() retorna 0 para segunda, 6 para domingo
+                while target_date.weekday() != current_day:
                     target_date += datetime.timedelta(days=1)
                 
-                # Se a data alvo já passou na semana atual, avança para a próxima semana
-                if target_date.weekday() == now_aware.weekday() and \
-                   datetime.datetime.strptime(formatted_start_time, '%H:%M').time() < now_aware.time():
+                # Se a data alvo já passou na *semana atual* e o *horário* também já passou, avança para a próxima semana
+                # Ex: se hoje é terça 10h e a tarefa é terça 9h, agenda para a próxima terça.
+                # Se hoje é segunda 10h e a tarefa é terça 9h, agenda para amanhã.
+                if target_date.weekday() == now_aware.weekday() and start_time_obj < now_aware.time():
                     target_date += datetime.timedelta(weeks=1)
 
-                start_dt_naive = datetime.datetime.combine(target_date, datetime.datetime.strptime(formatted_start_time, '%H:%M').time())
+                start_dt_naive = datetime.datetime.combine(target_date, start_time_obj)
                 start_dt_aware = SAO_PAULO_TZ.localize(start_dt_naive)
 
                 end_dt_aware = None
-                if formatted_end_time:
-                    end_dt_naive = datetime.datetime.combine(target_date, datetime.datetime.strptime(formatted_end_time, '%H:%M').time())
-                    # Se a hora de fim for antes da hora de início no mesmo dia, significa que termina no dia seguinte
-                    if end_dt_naive <= start_dt_naive:
+                if end_time_obj:
+                    end_dt_naive = datetime.datetime.combine(target_date, end_time_obj)
+                    if end_dt_naive < start_dt_naive: # Se o fim for antes do início (ex: 23h-01h), avança 1 dia
                         end_dt_naive += datetime.timedelta(days=1)
                     end_dt_aware = SAO_PAULO_TZ.localize(end_dt_naive)
+
+                if start_dt_aware <= now_aware:
+                    logger.warning(f"   Tarefa '{activity_description}' para {start_dt_aware} está no passado ou muito próxima, não agendada. Será necessário adicionar manualmente se quiser que ela apareça na lista de hoje.")
+                    continue # Não agenda tarefas que já passaram ou estão começando agora
 
                 # Agenda a tarefa e salva no dados.json
                 new_task_data = {
@@ -885,51 +968,296 @@ async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job
                     "end_when": end_dt_aware.isoformat() if end_dt_aware else None,
                     "completion_status": None,
                     "reason_not_completed": None,
-                    "recurring": True # Marca como tarefa recorrente
+                    "recurring": True, # Marca como tarefa recorrente
+                    "job_names": [] # Para armazenar os nomes dos jobs
                 }
                 tarefas.append(new_task_data)
-                
-                # O índice da tarefa recém-adicionada
                 current_task_idx = len(tarefas) - 1
-
-                # Agendar job para esta ocorrência da tarefa (com repetição para próximas semanas)
-                # IMPORTANTE: run_repeating não é ideal para agendamento semanal complexo de rotinas.
-                # A melhor abordagem para rotinas semanais é agendar a próxima ocorrência ao concluir/passar a atual.
-                # Para simplificar aqui e agendar pelo menos a primeira ocorrência:
                 
-                if start_dt_aware > now_aware:
-                    logger.info(f"   Agendando primeira ocorrência de '{activity_description}' para {start_dt_aware} (Aware)")
+                job_names_for_task = []
+
+                pre_start_time = start_dt_aware - datetime.timedelta(minutes=30)
+                if pre_start_time > now_aware:
+                    pre_start_job_name = f"recurring_task_pre_start_{chat_id}_{start_dt_aware.timestamp()}_{current_task_idx}"
                     job_queue.run_once(
                         send_task_alert,
-                        when=start_dt_aware,
-                        chat_id=chat_id,
-                        data={'description': activity_description, 'alert_type': 'start', 'task_idx': current_task_idx},
-                        name=f"recurring_task_start_{chat_id}_{start_dt_aware.timestamp()}"
+                        when=pre_start_time,
+                        chat_id=int(chat_id),
+                        data={'description': activity_description, 'alert_type': 'pre_start', 'task_idx': current_task_idx},
+                        name=pre_start_job_name
                     )
-                    scheduled_tasks_count += 1
+                    job_names_for_task.append(pre_start_job_name)
 
-                    if end_dt_aware and end_dt_aware > now_aware:
-                        logger.info(f"   Agendando alerta de fim para '{activity_description}' em {end_dt_aware} (Aware)")
-                        job_queue.run_once(
-                            send_task_alert,
-                            when=end_dt_aware,
-                            chat_id=chat_id,
-                            data={'description': activity_description, 'alert_type': 'end', 'task_idx': current_task_idx},
-                            name=f"recurring_task_end_{chat_id}_{end_dt_aware.timestamp()}"
-                        )
+                start_job_name = f"recurring_task_start_{chat_id}_{start_dt_aware.timestamp()}_{current_task_idx}"
+                job_queue.run_once(
+                    send_task_alert,
+                    when=start_dt_aware,
+                    chat_id=int(chat_id),
+                    data={'description': activity_description, 'alert_type': 'start', 'task_idx': current_task_idx},
+                    name=start_job_name
+                )
+                job_names_for_task.append(start_job_name)
+                scheduled_tasks_count += 1
 
-                    pre_start_time = start_dt_aware - datetime.timedelta(minutes=30)
-                    if pre_start_time > now_aware:
-                        logger.info(f"   Agendando alerta de pré-início para '{activity_description}' em {pre_start_time} (Aware)")
-                        job_queue.run_once(
-                            send_task_alert,
-                            when=pre_start_time,
-                            chat_id=chat_id,
-                            data={'description': activity_description, 'alert_type': 'pre_start', 'task_idx': current_task_idx},
-                            name=f"recurring_task_pre_start_{chat_id}_{start_dt_aware.timestamp()}"
-                        )
-                else:
-                    logger.warning(f"   Tarefa '{activity_description}' no passado, não agendada: {start_dt_aware}")
+                if end_dt_aware:
+                    end_job_name = f"recurring_task_end_{chat_id}_{end_dt_aware.timestamp()}_{current_task_idx}"
+                    job_queue.run_once(
+                        send_task_alert,
+                        when=end_dt_aware,
+                        chat_id=int(chat_id),
+                        data={'description': activity_description, 'alert_type': 'end', 'task_idx': current_task_idx},
+                        name=end_job_name
+                    )
+                    job_names_for_task.append(end_job_name)
+
+                new_task_data["job_names"] = job_names_for_task # Atualiza a tarefa com os nomes dos jobs
+                logger.info(f"   Agendada tarefa recorrente: '{activity_description}' para {start_dt_aware} (índice {current_task_idx}).")
 
     save_data(db)
     return scheduled_tasks_count
+
+# --- Funções do Pomodoro ---
+pomodoro_timers = defaultdict(lambda: {"focus": 25, "short_break": 5, "long_break": 15, "cycles": 4})
+pomodoro_status_map = {} # chat_id -> {"state": "idle/focus/short_break/long_break", "job": None, "current_cycle": 0, "start_time": None}
+
+async def pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = str(update.effective_chat.id)
+    current_status = pomodoro_status_map.get(chat_id, {"state": "idle"})
+    user_timers = pomodoro_timers[chat_id]
+
+    status_text = ""
+    if current_status["state"] == "idle":
+        status_text = "Nenhum Pomodoro em andamento. Que tal começar um agora? 💪"
+    elif current_status["state"] == "focus":
+        status_text = f"Foco total! 🧠 Você está no ciclo {current_status['current_cycle']} de Pomodoro."
+    elif current_status["state"] == "short_break":
+        status_text = "Pausa curta para recarregar as energias! ☕"
+    elif current_status["state"] == "long_break":
+        status_text = "Pausa longa, aproveite para relaxar de verdade! 🧘"
+    
+    keyboard = [
+        [InlineKeyboardButton("▶️ Iniciar Pomodoro", callback_data="pomodoro_start")],
+        [InlineKeyboardButton("⏸️ Pausar", callback_data="pomodoro_pause"),
+         InlineKeyboardButton("▶️ Retomar", callback_data="pomodoro_resume")],
+        [InlineKeyboardButton("⏹️ Parar Pomodoro", callback_data="pomodoro_stop_command")], # Callback diferente para não conflitar com o comando
+        [InlineKeyboardButton("⚙️ Configurar Tempos", callback_data="pomodoro_config_times")],
+        [InlineKeyboardButton("📊 Status Atual", callback_data="pomodoro_status_command")],
+    ]
+    markup = InlineKeyboardMarkup(keyboard)
+
+    message_text = (
+        f"🍅 *Seu Assistente Pomodoro* 🍅\n\n"
+        f"Tempo de Foco: *{user_timers['focus']} min*\n"
+        f"Descanso Curto: *{user_timers['short_break']} min*\n"
+        f"Descanso Longo: *{user_timers['long_break']} min*\n"
+        f"Ciclos por Longo Descanso: *{user_timers['cycles']}*\n\n"
+        f"Status: {status_text}\n\n"
+        "Vamos focar e ser superprodutivos! Escolha uma opção:"
+    )
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(message_text, reply_markup=markup, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(message_text, reply_markup=markup, parse_mode='Markdown')
+    logger.info(f"Usuário {chat_id} abriu o menu Pomodoro.")
+
+async def pomodoro_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = str(update.effective_chat.id)
+    current_status = pomodoro_status_map.get(chat_id)
+
+    if not current_status or current_status["state"] == "idle":
+        message = "😌 Nenhum Pomodoro em andamento. Use /pomodoro para começar a focar! 💪"
+    else:
+        state = current_status["state"]
+        remaining_time_seconds = current_status["job"]._scheduled_at.timestamp() - datetime.datetime.now(SAO_PAULO_TZ).timestamp()
+        remaining_minutes = max(0, int(remaining_time_seconds / 60))
+        remaining_seconds = max(0, int(remaining_time_seconds % 60))
+
+        message = (
+            f"🚀 *Status do Pomodoro:*\n"
+            f"Estado: *{state.replace('_', ' ').capitalize()}*\n"
+            f"Ciclo Atual: *{current_status['current_cycle']}*\n"
+            f"Tempo Restante: *{remaining_minutes:02d}m {remaining_seconds:02d}s*\n\n"
+            "Mantenha o ritmo! Você está no caminho certo! ✨"
+        )
+    
+    if update.callback_query:
+        await update.callback_query.answer() # Fecha a notificação do botão
+        await update.callback_query.message.reply_text(message, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(message, parse_mode='Markdown')
+    logger.info(f"Usuário {chat_id} solicitou status do Pomodoro.")
+
+async def pomodoro_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = str(update.effective_chat.id)
+    current_status = pomodoro_status_map.get(chat_id)
+
+    if current_status and current_status["state"] != "idle" and current_status["job"]:
+        current_status["job"].schedule_removal()
+        pomodoro_status_map[chat_id] = {"state": "idle", "job": None, "current_cycle": 0, "start_time": None}
+        message = "⏹️ Pomodoro parado. Que pena! Mas está tudo bem. Quando estiver pronto para retomar, me avise! 💪"
+    else:
+        message = "🚫 Não há Pomodoro em andamento para parar. Use /pomodoro para começar um! 😉"
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(message)
+        await pomodoro_menu(update, context) # Volta ao menu principal do Pomodoro
+    else:
+        await update.message.reply_text(message)
+    logger.info(f"Usuário {chat_id} parou o Pomodoro.")
+
+async def pomodoro_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+    
+    user_timers = pomodoro_timers[chat_id]
+    current_status = pomodoro_status_map.get(chat_id, {"state": "idle", "current_cycle": 0})
+
+    if query.data == "pomodoro_start":
+        if current_status["state"] != "idle" and current_status["job"]:
+            await query.edit_message_text("🔄 Já existe um Pomodoro em andamento! Se quiser reiniciar, pare o atual primeiro com /pomodoro_stop. 😉")
+            return
+        
+        pomodoro_status_map[chat_id] = {"state": "focus", "current_cycle": 1, "start_time": datetime.datetime.now(SAO_PAULO_TZ)}
+        await start_pomodoro_timer(chat_id, "focus", user_timers["focus"], context.job_queue)
+        await query.edit_message_text(f"🚀 Pomodoro Iniciado! Foco total por *{user_timers['focus']} minutos*! Você consegue! 💪", parse_mode='Markdown')
+        logger.info(f"Usuário {chat_id} iniciou o Pomodoro (Ciclo 1).")
+
+    elif query.data == "pomodoro_pause":
+        if current_status["state"] not in ["idle", "paused"] and current_status["job"]:
+            remaining_time_seconds = current_status["job"]._scheduled_at.timestamp() - datetime.datetime.now(SAO_PAULO_TZ).timestamp()
+            pomodoro_status_map[chat_id]["paused_remaining_time"] = remaining_time_seconds
+            current_status["job"].schedule_removal()
+            pomodoro_status_map[chat_id]["state"] = "paused"
+            await query.edit_message_text(f"⏸️ Pomodoro pausado! Tempo restante: *{int(remaining_time_seconds/60)}m {int(remaining_time_seconds%60)}s*.\n\n"
+                                          "Quando estiver pronto, clique em Retomar!", parse_mode='Markdown')
+            logger.info(f"Usuário {chat_id} pausou o Pomodoro.")
+        else:
+            await query.edit_message_text("🤔 Não há Pomodoro ativo para pausar. Que tal começar um novo? 😉")
+    
+    elif query.data == "pomodoro_resume":
+        if current_status["state"] == "paused" and "paused_remaining_time" in current_status:
+            remaining_time = current_status["paused_remaining_time"]
+            # Descobrir qual era o estado antes de pausar
+            previous_state = "focus" # Assume foco se não houver um estado específico salvo
+            if current_status["current_cycle"] % (user_timers["cycles"] + 1) == 0: # Para o caso do descanso longo
+                if current_status["current_cycle"] > 0: # Não aplica para ciclo 0
+                    previous_state = "long_break"
+            elif current_status["current_cycle"] % user_timers["cycles"] == 0:
+                previous_state = "short_break"
+            
+            pomodoro_status_map[chat_id]["state"] = previous_state # Retorna ao estado anterior
+            await start_pomodoro_timer(chat_id, previous_state, remaining_time / 60, context.job_queue, is_resume=True) # Passa tempo em minutos
+            await query.edit_message_text(f"▶️ Pomodoro retomado! Foco e energia total! 💪", parse_mode='Markdown')
+            logger.info(f"Usuário {chat_id} retomou o Pomodoro com {remaining_time} segundos restantes.")
+        else:
+            await query.edit_message_text("🤔 Não há Pomodoro pausado para retomar. Que tal iniciar um novo ciclo? 😉")
+
+    elif query.data == "pomodoro_stop_command": # Este é para o botão no menu
+        await pomodoro_stop(update, context) # Chama a função de parada
+        
+    elif query.data == "pomodoro_config_times":
+        keyboard = [
+            [InlineKeyboardButton(f"Foco: {user_timers['focus']} min", callback_data="set_pomodoro_focus")],
+            [InlineKeyboardButton(f"Descanso Curto: {user_timers['short_break']} min", callback_data="set_pomodoro_short_break")],
+            [InlineKeyboardButton(f"Descanso Longo: {user_timers['long_break']} min", callback_data="set_pomodoro_long_break")],
+            [InlineKeyboardButton(f"Ciclos p/ Descanso Longo: {user_timers['cycles']}", callback_data="set_pomodoro_cycles")],
+            [InlineKeyboardButton("↩️ Voltar ao Pomodoro", callback_data="menu_pomodoro")],
+        ]
+        markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("⚙️ *Configurar Tempos do Pomodoro*\n\n"
+                                      "Clique para alterar:", reply_markup=markup, parse_mode='Markdown')
+        logger.info(f"Usuário {chat_id} acessou configurações do Pomodoro.")
+
+    elif query.data == "pomodoro_status_command": # Este é para o botão no menu
+        await pomodoro_status(update, context)
+
+
+async def pomodoro_set_time_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+    
+    setting_type = query.data.replace("set_pomodoro_", "")
+    
+    if setting_type == "cycles":
+        context.user_data["expecting"] = f"pomodoro_set_{setting_type}"
+        await query.edit_message_text("🔢 Por favor, digite quantos ciclos de foco você quer fazer antes de um descanso longo (ex: '4').")
+    else:
+        context.user_data["expecting"] = f"pomodoro_set_{setting_type}"
+        await query.edit_message_text(f"⏱️ Digite o novo tempo em minutos para o *{setting_type.replace('_', ' ')}* (ex: '25').", parse_mode='Markdown')
+    logger.info(f"Usuário {chat_id} iniciou configuração de '{setting_type}' para Pomodoro.")
+
+
+async def start_pomodoro_timer(chat_id: str, timer_type: str, duration_minutes: float, job_queue: JobQueue, is_resume: bool = False):
+    duration_seconds = int(duration_minutes * 60)
+    
+    def pomodoro_job_callback(context: ContextTypes.DEFAULT_TYPE):
+        asyncio.create_task(handle_pomodoro_end(context)) # Chama a função assíncrona
+
+    job = job_queue.run_once(
+        pomodoro_job_callback,
+        duration_seconds,
+        chat_id=int(chat_id),
+        data={"timer_type": timer_type, "chat_id": chat_id},
+        name=f"pomodoro_{chat_id}_{timer_type}_{datetime.datetime.now().timestamp()}"
+    )
+    pomodoro_status_map[chat_id]["job"] = job
+    pomodoro_status_map[chat_id]["state"] = timer_type
+    logger.info(f"Job Pomodoro '{timer_type}' agendado para {duration_seconds} segundos para o chat {chat_id}. (Resume: {is_resume})")
+
+async def handle_pomodoro_end(context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = context.job.chat_id
+    timer_type = context.job.data["timer_type"]
+    user_timers = pomodoro_timers[str(chat_id)]
+    current_status = pomodoro_status_map.get(str(chat_id))
+
+    if not current_status or current_status["state"] == "idle":
+        logger.warning(f"Pomodoro terminou para {chat_id} mas estado já é 'idle'. Ignorando.")
+        return
+
+    message = ""
+    next_state = "idle"
+    next_duration = 0
+    
+    if timer_type == "focus":
+        current_status["current_cycle"] += 1
+        message = f"🔔 *Tempo de FOCO ACABOU!* 🎉 Você completou o ciclo {current_status['current_cycle']}! "
+        
+        if current_status["current_cycle"] % user_timers["cycles"] == 0:
+            message += f"Hora de um *Descanso LONGO* de *{user_timers['long_break']} minutos*! Você merece! 🧘"
+            next_state = "long_break"
+            next_duration = user_timers["long_break"]
+        else:
+            message += f"Agora, um *Descanso CURTO* de *{user_timers['short_break']} minutos* para recarregar! ☕"
+            next_state = "short_break"
+            next_duration = user_timers["short_break"]
+        
+        # Adicionar 5 pontos por ciclo de foco concluído
+        db = load_data()
+        user_data = db.setdefault(str(chat_id), {})
+        user_data["score"] = user_data.get("score", 0) + 5
+        save_data(db)
+        message += f"\n\nVocê ganhou *5 pontos* por este ciclo! Pontuação total: *{user_data['score']}* 🌟"
+        
+    elif timer_type == "short_break":
+        message = f"🚀 *Descanso CURTO ACABOU!* Hora de voltar para o foco! Mais *{user_timers['focus']} minutos*! 💪"
+        next_state = "focus"
+        next_duration = user_timers["focus"]
+    
+    elif timer_type == "long_break":
+        message = f"🎉 *Descanso LONGO ACABOU!* Preparado para mais *{user_timers['focus']} minutos* de produtividade? Vamos lá! 🤩"
+        current_status["current_cycle"] = 0 # Reinicia os ciclos após descanso longo
+        next_state = "focus"
+        next_duration = user_timers["focus"]
+
+    await context.bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
+    logger.info(f"Pomodoro {timer_type} terminou para {chat_id}. Próximo estado: {next_state}.")
+
+    if next_state != "idle":
+        await start_pomodoro_timer(str(chat_id), next_state, next_duration, context.job_queue)
+    else:
+        pomodoro_status_map[str(chat_id)] = {"state": "idle", "job": None, "current_cycle": 0, "start_time": None}
+        await context.bot.send_message(chat_id=chat_id, text="🥳 Ciclo de Pomodoro completo! Parabéns pela dedicação! Use /pomodoro para iniciar um novo ciclo quando quiser. Você é um arraso! ✨")
