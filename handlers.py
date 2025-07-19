@@ -5,8 +5,8 @@ import datetime
 import dateparser
 import logging
 import pytz
-import asyncio # Adicionado para usar sleep se necessário
-from collections import defaultdict # Para o Pomodoro
+import asyncio 
+from collections import defaultdict 
 
 from telegram import (
     Update,
@@ -593,26 +593,28 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if state and state.startswith("pomodoro_set_"):
         try:
             value = int(text)
-            if not (1 <= value <= 120): # Limite razoável para minutos
-                await update.message.reply_text("Por favor, digite um número entre 1 e 120 minutos.")
-                return
+            if setting_type == "cycles":
+                if not (1 <= value <= 10): # Limite razoável para ciclos
+                    await update.message.reply_text("Por favor, digite um número de ciclos entre 1 e 10.")
+                    return
+            else: # tempos de foco/descanso
+                if not (1 <= value <= 120): # Limite razoável para minutos
+                    await update.message.reply_text("Por favor, digite um número entre 1 e 120 minutos.")
+                    return
 
-            if state == "pomodoro_set_focus":
-                user_data["pomodoro_focus_time"] = value
-                await update.message.reply_text(f"✅ Tempo de foco definido para *{value} minutos*! Que tal definir o descanso agora?", parse_mode='Markdown')
-            elif state == "pomodoro_set_short_break":
-                user_data["pomodoro_short_break_time"] = value
-                await update.message.reply_text(f"✅ Descanso curto definido para *{value} minutos*! Quase lá...", parse_mode='Markdown')
-            elif state == "pomodoro_set_long_break":
-                user_data["pomodoro_long_break_time"] = value
-                await update.message.reply_text(f"✅ Descanso longo definido para *{value} minutos*! Tudo pronto! 🎉", parse_mode='Markdown')
+            setting_type = state.replace("pomodoro_set_", "")
             
-            save_data(db)
+            # Aqui atualizamos o dicionário pomodoro_timers diretamente
+            pomodoro_timers[chat_id][setting_type] = value
+            save_data(db) # Salva a configuração atualizada
+
+            await update.message.reply_text(f"✅ Tempo de *{setting_type.replace('_', ' ')}* definido para *{value} minutos*! 🎉", parse_mode='Markdown')
+            
             context.user_data.pop("expecting", None)
             await pomodoro_menu(update, context) # Volta ao menu do Pomodoro
             return
         except ValueError:
-            await update.message.reply_text("Ops! Por favor, digite um *número válido* de minutos. Ex: '25'.", parse_mode='Markdown')
+            await update.message.reply_text("Ops! Por favor, digite um *número válido*. Ex: '25'.", parse_mode='Markdown')
             return
 
 
@@ -793,17 +795,20 @@ async def delete_task_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 # Helper para cancelar jobs de uma tarefa
 def cancel_task_jobs(chat_id: str, job_names: list, job_queue: JobQueue):
     """Cancela todos os jobs do JobQueue com os nomes fornecidos para um chat_id específico."""
-    jobs_to_remove = []
+    jobs_to_remove_from_list = []
     for job_name in job_names:
         current_jobs = job_queue.get_jobs_by_name(job_name)
         for job in current_jobs:
+            # Verifica se o job pertence a este chat_id específico
             if job.chat_id == int(chat_id):
                 job.schedule_removal()
-                jobs_to_remove.append(job.name)
+                jobs_to_remove_from_list.append(job.name) # Marca para remoção da lista
                 logger.info(f"Job '{job.name}' cancelado para o chat {chat_id}.")
-    
-    # Opcional: remover os nomes dos jobs do registro da tarefa no JSON (já feito ao remover a tarefa)
-    # ou, se a tarefa não for removida, limpar a lista de job_names dela.
+            else:
+                logger.warning(f"Job '{job.name}' encontrado, mas não pertence ao chat {chat_id}. Não será removido.")
+
+    # Opcional: remover os nomes dos jobs da lista na tarefa (já feito ao remover a tarefa, mas importante para consistência se a tarefa não for removida)
+    # Exemplo: se estivéssemos limpando apenas jobs, não a tarefa toda.
 
 # --- Funções de Feedback e Relatórios ---
 async def send_daily_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1018,12 +1023,22 @@ async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job
 
 # --- Funções do Pomodoro ---
 pomodoro_timers = defaultdict(lambda: {"focus": 25, "short_break": 5, "long_break": 15, "cycles": 4})
-pomodoro_status_map = {} # chat_id -> {"state": "idle/focus/short_break/long_break", "job": None, "current_cycle": 0, "start_time": None}
+# Armazena a data de fim agendada para calcular o tempo restante
+pomodoro_status_map = {} # chat_id -> {"state": "idle/focus/short_break/long_break", "job": None, "current_cycle": 0, "end_time": None}
 
 async def pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = str(update.effective_chat.id)
     current_status = pomodoro_status_map.get(chat_id, {"state": "idle"})
     user_timers = pomodoro_timers[chat_id]
+
+    # Carrega as configurações do Pomodoro do dados.json, se existirem
+    db = load_data()
+    user_data = db.setdefault(chat_id, {})
+    pomodoro_config = user_data.setdefault("pomodoro_config", {})
+    user_timers['focus'] = pomodoro_config.get('focus', 25)
+    user_timers['short_break'] = pomodoro_config.get('short_break', 5)
+    user_timers['long_break'] = pomodoro_config.get('long_break', 15)
+    user_timers['cycles'] = pomodoro_config.get('cycles', 4)
 
     status_text = ""
     if current_status["state"] == "idle":
@@ -1069,9 +1084,16 @@ async def pomodoro_status(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         message = "😌 Nenhum Pomodoro em andamento. Use /pomodoro para começar a focar! 💪"
     else:
         state = current_status["state"]
-        remaining_time_seconds = current_status["job"]._scheduled_at.timestamp() - datetime.datetime.now(SAO_PAULO_TZ).timestamp()
-        remaining_minutes = max(0, int(remaining_time_seconds / 60))
-        remaining_seconds = max(0, int(remaining_time_seconds % 60))
+        # CORREÇÃO: Usar current_status["end_time"] para calcular o tempo restante
+        if current_status.get("end_time"):
+            remaining_time_seconds = (current_status["end_time"] - datetime.datetime.now(SAO_PAULO_TZ)).total_seconds()
+            remaining_minutes = max(0, int(remaining_time_seconds / 60))
+            remaining_seconds = max(0, int(remaining_time_seconds % 60))
+        else:
+            remaining_minutes = 0
+            remaining_seconds = 0
+            logger.warning(f"end_time não encontrado para o Pomodoro de {chat_id} no estado '{state}'.")
+
 
         message = (
             f"🚀 *Status do Pomodoro:*\n"
@@ -1094,7 +1116,7 @@ async def pomodoro_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     if current_status and current_status["state"] != "idle" and current_status["job"]:
         current_status["job"].schedule_removal()
-        pomodoro_status_map[chat_id] = {"state": "idle", "job": None, "current_cycle": 0, "start_time": None}
+        pomodoro_status_map[chat_id] = {"state": "idle", "job": None, "current_cycle": 0, "end_time": None}
         message = "⏹️ Pomodoro parado. Que pena! Mas está tudo bem. Quando estiver pronto para retomar, me avise! 💪"
     else:
         message = "🚫 Não há Pomodoro em andamento para parar. Use /pomodoro para começar um! 😉"
@@ -1127,29 +1149,38 @@ async def pomodoro_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     elif query.data == "pomodoro_pause":
         if current_status["state"] not in ["idle", "paused"] and current_status["job"]:
-            remaining_time_seconds = current_status["job"]._scheduled_at.timestamp() - datetime.datetime.now(SAO_PAULO_TZ).timestamp()
-            pomodoro_status_map[chat_id]["paused_remaining_time"] = remaining_time_seconds
-            current_status["job"].schedule_removal()
-            pomodoro_status_map[chat_id]["state"] = "paused"
-            await query.edit_message_text(f"⏸️ Pomodoro pausado! Tempo restante: *{int(remaining_time_seconds/60)}m {int(remaining_time_seconds%60)}s*.\n\n"
-                                          "Quando estiver pronto, clique em Retomar!", parse_mode='Markdown')
-            logger.info(f"Usuário {chat_id} pausou o Pomodoro.")
+            # CORREÇÃO: Cálculo correto do tempo restante para pausa
+            if current_status.get("end_time"):
+                remaining_time_seconds = (current_status["end_time"] - datetime.datetime.now(SAO_PAULO_TZ)).total_seconds()
+                pomodoro_status_map[chat_id]["paused_remaining_time"] = remaining_time_seconds
+                current_status["job"].schedule_removal() # Cancela o job atual
+                pomodoro_status_map[chat_id]["state"] = "paused"
+                await query.edit_message_text(f"⏸️ Pomodoro pausado! Tempo restante: *{int(remaining_time_seconds/60):02d}m {int(remaining_time_seconds%60):02d}s*.\n\n"
+                                              "Quando estiver pronto, clique em Retomar!", parse_mode='Markdown')
+                logger.info(f"Usuário {chat_id} pausou o Pomodoro.")
+            else:
+                await query.edit_message_text("❌ Ops, não consegui calcular o tempo restante para pausar. Tente novamente ou pare o Pomodoro.")
+                logger.error(f"Erro ao pausar Pomodoro para {chat_id}: end_time não encontrado.")
+
         else:
             await query.edit_message_text("🤔 Não há Pomodoro ativo para pausar. Que tal começar um novo? 😉")
     
     elif query.data == "pomodoro_resume":
         if current_status["state"] == "paused" and "paused_remaining_time" in current_status:
             remaining_time = current_status["paused_remaining_time"]
-            # Descobrir qual era o estado antes de pausar
-            previous_state = "focus" # Assume foco se não houver um estado específico salvo
-            if current_status["current_cycle"] % (user_timers["cycles"] + 1) == 0: # Para o caso do descanso longo
-                if current_status["current_cycle"] > 0: # Não aplica para ciclo 0
-                    previous_state = "long_break"
-            elif current_status["current_cycle"] % user_timers["cycles"] == 0:
-                previous_state = "short_break"
             
+            # Recupera o tipo de timer que estava rodando antes da pausa
+            # É necessário verificar o `current_cycle` e `cycles` para saber se era foco, short_break ou long_break
+            previous_state = "focus"
+            if current_status["current_cycle"] > 0: # Se já passou pelo menos um ciclo
+                if current_status["current_cycle"] % user_timers["cycles"] == 0:
+                    previous_state = "long_break" # Era um descanso longo
+                else:
+                    previous_state = "short_break" # Era um descanso curto
+
             pomodoro_status_map[chat_id]["state"] = previous_state # Retorna ao estado anterior
-            await start_pomodoro_timer(chat_id, previous_state, remaining_time / 60, context.job_queue, is_resume=True) # Passa tempo em minutos
+            # Passa o tempo restante em segundos para a função de agendamento
+            await start_pomodoro_timer(chat_id, previous_state, remaining_time / 60, context.job_queue, is_resume=True) 
             await query.edit_message_text(f"▶️ Pomodoro retomado! Foco e energia total! 💪", parse_mode='Markdown')
             logger.info(f"Usuário {chat_id} retomou o Pomodoro com {remaining_time} segundos restantes.")
         else:
@@ -1182,11 +1213,13 @@ async def pomodoro_set_time_callback(update: Update, context: ContextTypes.DEFAU
     
     setting_type = query.data.replace("set_pomodoro_", "")
     
+    # Armazena o tipo de configuração esperado no user_data para ser usado em handle_text
+    context.user_data["expecting"] = f"pomodoro_set_{setting_type}" 
+    context.user_data["pomodoro_setting_type"] = setting_type # Guarda o tipo de configuração
+
     if setting_type == "cycles":
-        context.user_data["expecting"] = f"pomodoro_set_{setting_type}"
         await query.edit_message_text("🔢 Por favor, digite quantos ciclos de foco você quer fazer antes de um descanso longo (ex: '4').")
     else:
-        context.user_data["expecting"] = f"pomodoro_set_{setting_type}"
         await query.edit_message_text(f"⏱️ Digite o novo tempo em minutos para o *{setting_type.replace('_', ' ')}* (ex: '25').", parse_mode='Markdown')
     logger.info(f"Usuário {chat_id} iniciou configuração de '{setting_type}' para Pomodoro.")
 
@@ -1197,6 +1230,9 @@ async def start_pomodoro_timer(chat_id: str, timer_type: str, duration_minutes: 
     def pomodoro_job_callback(context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(handle_pomodoro_end(context)) # Chama a função assíncrona
 
+    # Calcula o end_time para armazenamento
+    end_time = datetime.datetime.now(SAO_PAULO_TZ) + datetime.timedelta(seconds=duration_seconds)
+
     job = job_queue.run_once(
         pomodoro_job_callback,
         duration_seconds,
@@ -1204,8 +1240,12 @@ async def start_pomodoro_timer(chat_id: str, timer_type: str, duration_minutes: 
         data={"timer_type": timer_type, "chat_id": chat_id},
         name=f"pomodoro_{chat_id}_{timer_type}_{datetime.datetime.now().timestamp()}"
     )
+    
+    # Atualiza o status map
     pomodoro_status_map[chat_id]["job"] = job
     pomodoro_status_map[chat_id]["state"] = timer_type
+    pomodoro_status_map[chat_id]["end_time"] = end_time # Armazena o tempo de término
+
     logger.info(f"Job Pomodoro '{timer_type}' agendado para {duration_seconds} segundos para o chat {chat_id}. (Resume: {is_resume})")
 
 async def handle_pomodoro_end(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1226,21 +1266,22 @@ async def handle_pomodoro_end(context: ContextTypes.DEFAULT_TYPE) -> None:
         current_status["current_cycle"] += 1
         message = f"🔔 *Tempo de FOCO ACABOU!* 🎉 Você completou o ciclo {current_status['current_cycle']}! "
         
-        if current_status["current_cycle"] % user_timers["cycles"] == 0:
-            message += f"Hora de um *Descanso LONGO* de *{user_timers['long_break']} minutos*! Você merece! 🧘"
-            next_state = "long_break"
-            next_duration = user_timers["long_break"]
-        else:
-            message += f"Agora, um *Descanso CURTO* de *{user_timers['short_break']} minutos* para recarregar! ☕"
-            next_state = "short_break"
-            next_duration = user_timers["short_break"]
-        
         # Adicionar 5 pontos por ciclo de foco concluído
         db = load_data()
         user_data = db.setdefault(str(chat_id), {})
         user_data["score"] = user_data.get("score", 0) + 5
         save_data(db)
         message += f"\n\nVocê ganhou *5 pontos* por este ciclo! Pontuação total: *{user_data['score']}* 🌟"
+
+        if current_status["current_cycle"] % user_timers["cycles"] == 0:
+            message += f"\n\nAgora, é hora de um *Descanso LONGO* de *{user_timers['long_break']} minutos*! Você merece! 🧘"
+            next_state = "long_break"
+            next_duration = user_timers["long_break"]
+        else:
+            message += f"\n\nAgora, um *Descanso CURTO* de *{user_timers['short_break']} minutos* para recarregar! ☕"
+            next_state = "short_break"
+            next_duration = user_timers["short_break"]
+        
         
     elif timer_type == "short_break":
         message = f"🚀 *Descanso CURTO ACABOU!* Hora de voltar para o foco! Mais *{user_timers['focus']} minutos*! 💪"
@@ -1259,5 +1300,5 @@ async def handle_pomodoro_end(context: ContextTypes.DEFAULT_TYPE) -> None:
     if next_state != "idle":
         await start_pomodoro_timer(str(chat_id), next_state, next_duration, context.job_queue)
     else:
-        pomodoro_status_map[str(chat_id)] = {"state": "idle", "job": None, "current_cycle": 0, "start_time": None}
+        pomodoro_status_map[str(chat_id)] = {"state": "idle", "job": None, "current_cycle": 0, "end_time": None}
         await context.bot.send_message(chat_id=chat_id, text="🥳 Ciclo de Pomodoro completo! Parabéns pela dedicação! Use /pomodoro para iniciar um novo ciclo quando quiser. Você é um arraso! ✨")
