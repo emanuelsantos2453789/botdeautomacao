@@ -107,7 +107,7 @@ async def rotina(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("📝 Minhas Tarefas", callback_data="menu_list_tasks")],
         [InlineKeyboardButton("🗓️ Agendar Rotina Semanal", callback_data="menu_weekly_routine")],
         [InlineKeyboardButton("📊 Feedback do Dia", callback_data="menu_daily_feedback")],
-        [InlineKeyboardButton("Extra menu😊", callback_data="menu_extra")]
+        [InlineKeyboardButton("Extra menu😊", callback_data="menu_extra")],
         [InlineKeyboardButton("🍅 Pomodoro", callback_data="menu_pomodoro")], # Novo botão Pomodoro
     ]
     markup = InlineKeyboardMarkup(keyboard)
