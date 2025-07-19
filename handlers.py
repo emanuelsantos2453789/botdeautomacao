@@ -226,7 +226,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if state == "schedule_datetime":
         logger.info(f"Tentando parsear data/hora: '{text}'")
         try:
-            processed_text = text.replace('H', '').strip()
+            # Remove "h" para ajudar o dateparser
+            processed_text = text.replace('h', '').strip() 
             logger.info(f"Texto pré-processado para dateparser: '{processed_text}'")
             
             sao_paulo_tz = pytz.timezone('America/Sao_Paulo')
@@ -235,63 +236,60 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             start_dt_naive = None
             end_dt_naive = None
 
-            # 1. Tentar extrair data e horários com regex mais flexível
-            # Padrão: (data opcional) (hora_inicio) (separador) (hora_fim)
-            # Ex: "18/07 20:55 às 21:00" ou "20:55 às 21:00"
-            date_time_range_match = re.search(
-                r'(?:(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+)?' # Optional date like 18/07 or 18/07/2025
-                r'(\d{1,2}:\d{2})\s*(?:às|-)\s*(\d{1,2}:\d{2})', # Time range like 20:55 às 21:00
+            # Tentar encontrar um padrão de intervalo de tempo (HH:MM às HH:MM)
+            # Pode ou não ter uma data antes dos horários
+            time_range_match = re.search(
+                r'(\d{1,2}:\d{2})\s*(?:às|-)\s*(\d{1,2}:\d{2})',
                 processed_text,
                 re.IGNORECASE
             )
             
-            if date_time_range_match:
-                date_str = date_time_range_match.group(1) # Pode ser None
-                start_time_str = date_time_range_match.group(2)
-                end_time_str = date_time_range_match.group(3)
+            if time_range_match:
+                start_time_str = time_range_match.group(1)
+                end_time_str = time_range_match.group(2)
                 
-                base_date_for_parse = now_aware.replace(tzinfo=None) # Default to today
-                if date_str:
-                    parsed_date_only = dateparser.parse(
-                        date_str,
-                        settings={
-                            "DATE_ORDER": "DMY",
-                            "RELATIVE_BASE": now_aware,
-                            "TIMEZONE": "America/Sao_Paulo",
-                            "RETURN_AS_TIMEZONE_AWARE": False,
-                            "PREFER_DATES_FROM": "future"
-                        }
-                    )
-                    if parsed_date_only:
-                        base_date_for_parse = parsed_date_only
-                
-                # Combine base_date with extracted times
-                start_dt_naive = dateparser.parse(
-                    f"{base_date_for_parse.strftime('%Y-%m-%d')} {start_time_str}",
+                # Remove a parte do horário da string original para parsear a data base
+                text_without_time_range = processed_text.replace(time_range_match.group(0), '').strip()
+
+                # Tenta parsear a data (dia, mês, ano) da string restante
+                # DICA: Use settings para forçar a preferência e o timezone
+                parsed_date_only = dateparser.parse(
+                    text_without_time_range or "hoje", # Se não tiver data, assume "hoje"
                     settings={
                         "DATE_ORDER": "DMY",
                         "RELATIVE_BASE": now_aware,
                         "TIMEZONE": "America/Sao_Paulo",
                         "RETURN_AS_TIMEZONE_AWARE": False,
-                    }
-                )
-                end_dt_naive = dateparser.parse(
-                    f"{base_date_for_parse.strftime('%Y-%m-%d')} {end_time_str}",
-                    settings={
-                        "DATE_ORDER": "DMY",
-                        "RELATIVE_BASE": now_aware,
-                        "TIMEZONE": "America/Sao_Paulo",
-                        "RETURN_AS_TIMEZONE_AWARE": False,
+                        "PREFER_DATES_FROM": "current_period", # Prioriza o período atual (mês/ano)
+                        "STRICT_PARSING": False
                     }
                 )
                 
-                # Adjust end_dt_naive if it's before start_dt_naive (e.g., 23:00 to 02:00 next day)
-                if start_dt_naive and end_dt_naive and end_dt_naive < start_dt_naive:
-                    end_dt_naive += datetime.timedelta(days=1)
+                # Se parsed_date_only for None (não conseguiu pegar nenhuma data), usa o dia de hoje
+                base_date_naive = parsed_date_only if parsed_date_only else now_aware.replace(tzinfo=None).date()
+                
+                # Garante que base_date_naive é um datetime.date ou datetime.datetime
+                if isinstance(base_date_naive, datetime.datetime):
+                    base_date_naive = base_date_naive.date()
+                
+                # Agora, combina a data base com os horários extraídos
+                # Para o start_dt_naive, se o horário for menor que o atual, tenta o próximo dia
+                temp_start_dt = datetime.datetime.combine(base_date_naive, datetime.datetime.strptime(start_time_str, '%H:%M').time())
+                if temp_start_dt < now_aware.replace(tzinfo=None) - datetime.timedelta(minutes=1): # 1 min buffer
+                    temp_start_dt += datetime.timedelta(days=1)
+                start_dt_naive = temp_start_dt
+                
+                temp_end_dt = datetime.datetime.combine(base_date_naive, datetime.datetime.strptime(end_time_str, '%H:%M').time())
+                
+                # Ajusta o dia do end_dt_naive se o horário de fim for menor que o de início (ex: 23h às 02h do dia seguinte)
+                if temp_end_dt < start_dt_naive.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1, seconds=-1):
+                    temp_end_dt += datetime.timedelta(days=1)
+                
+                end_dt_naive = temp_end_dt
                 
                 logger.info(f"Parse com intervalo (regex): Start={start_dt_naive}, End={end_dt_naive} para '{processed_text}'")
 
-            # 2. Se a regex de intervalo não encontrou, tenta parsear como uma única data/hora
+            # Se não encontrou um intervalo ou se o texto é apenas uma data/hora única
             if not start_dt_naive:
                 dt_parsed = dateparser.parse(
                     processed_text,
@@ -300,69 +298,52 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                         "TIMEZONE": "America/Sao_Paulo",
                         "RETURN_AS_TIMEZONE_AWARE": False,
                         "RELATIVE_BASE": now_aware,
-                        "PREFER_DATES_FROM": "future" # Prioriza datas no futuro
+                        "PREFER_DATES_FROM": "current_period", # Prioriza o período atual (mês/ano)
+                        "STRICT_PARSING": False
                     },
                 )
-                start_dt_naive = dt_parsed
+                
+                if dt_parsed and isinstance(dt_parsed, datetime.datetime):
+                    # Se o parse resultou em uma data/hora no passado, tenta avançar para o futuro
+                    if dt_parsed <= now_aware.replace(tzinfo=None) - datetime.timedelta(minutes=1): # 1 min buffer
+                        # Tenta de novo, mas preferindo o futuro (próximo dia/semana/etc.)
+                        dt_parsed_future = dateparser.parse(
+                            processed_text,
+                            settings={
+                                "DATE_ORDER": "DMY",
+                                "TIMEZONE": "America/Sao_Paulo",
+                                "RETURN_AS_TIMEZONE_AWARE": False,
+                                "RELATIVE_BASE": now_aware,
+                                "PREFER_DATES_FROM": "future", # Agora sim, prefere o futuro
+                                "STRICT_PARSING": False
+                            },
+                        )
+                        if dt_parsed_future and dt_parsed_future > now_aware.replace(tzinfo=None):
+                            start_dt_naive = dt_parsed_future
+                        else:
+                            # Se mesmo preferindo o futuro não funcionou, então a data é inválida ou muito antiga
+                            logger.warning(f"Data/hora '{processed_text}' ainda no passado após tentar preferir futuro.")
+                            await update.message.reply_text(
+                                "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
+                            )
+                            return
+                    else:
+                        start_dt_naive = dt_parsed
+                
                 logger.info(f"Parse como única data/hora: {start_dt_naive} para '{processed_text}'")
 
             if not start_dt_naive or not isinstance(start_dt_naive, datetime.datetime):
-                logger.warning(f"Data/hora não entendida para '{processed_text}'. dt: {start_dt_naive}")
+                logger.warning(f"Não foi possível entender a data/hora para '{processed_text}'. Objeto: {start_dt_naive}")
                 await update.message.reply_text(
-                    "❌ Não entendi o dia e horário. Tente algo como:\n"
-                    "- Amanhã às 14h\n"
+                    "❌ Não entendi o dia e horário. Por favor, tente um formato claro como:\n"
+                    "- Amanhã 14h\n"
                     "- 20/07 15h\n"
                     "- 08:30 às 12:00h\n"
                     "- Terça 10h"
                 )
                 return
 
-            # Final check to ensure start_dt_naive is in the future
-            # Give a small buffer (e.g., 1 minute) to avoid issues with "now"
-            if start_dt_naive <= now_aware.replace(tzinfo=None) + datetime.timedelta(minutes=1):
-                # If the parsed time is in the past or too close to now,
-                # try to advance it to the next occurrence in the future.
-                # This is crucial for inputs like "9 AM" when it's already 10 AM.
-                logger.info(f"Data/hora de início parseada ({start_dt_naive}) está no passado ou muito próxima. Tentando avançar para o futuro.")
-                
-                # Create a new parse attempt with "prefer_dates_from: future" and a more aggressive relative_base
-                # This ensures that if it's 10 PM and user says "9 AM", it means 9 AM tomorrow.
-                dt_future_attempt = dateparser.parse(
-                    processed_text,
-                    settings={
-                        "DATE_ORDER": "DMY",
-                        "PREFER_DATES_FROM": "future",
-                        "TIMEZONE": "America/Sao_Paulo",
-                        "RETURN_AS_TIMEZONE_AWARE": False,
-                        "RELATIVE_BASE": now_aware, # Keep relative base as now for "tomorrow", "next week" etc.
-                    },
-                )
-
-                if dt_future_attempt and isinstance(dt_future_attempt, datetime.datetime) and dt_future_attempt > now_aware.replace(tzinfo=None):
-                    start_dt_naive = dt_future_attempt
-                    # If start_dt_naive was adjusted, end_dt_naive might also need adjustment
-                    if end_dt_naive:
-                        # If end_dt_naive was based on a past date, adjust it to the new start_dt_naive's date
-                        if end_dt_naive.date() < start_dt_naive.date():
-                            end_dt_naive = end_dt_naive.replace(year=start_dt_naive.year, month=start_dt_naive.month, day=start_dt_naive.day)
-                            if end_dt_naive < start_dt_naive: # If still before, advance a day
-                                end_dt_naive += datetime.timedelta(days=1)
-                        # If start_dt_naive was adjusted by a full day (e.g., "9 AM" from today to tomorrow)
-                        # and end_dt_naive was on the same day, advance end_dt_naive by the same amount.
-                        elif (start_dt_naive.date() - dt_parsed.date()).days > 0: # If start_dt_naive jumped a day
-                             end_dt_naive += datetime.timedelta(days=(start_dt_naive.date() - dt_parsed.date()).days)
-                             if end_dt_naive < start_dt_naive: # Still check for 23h to 02h case
-                                 end_dt_naive += datetime.timedelta(days=1)
-
-
-                    logger.info(f"Data/hora de início avançada para o futuro: {start_dt_naive}")
-                else:
-                    await update.message.reply_text(
-                        "❌ A data/hora agendada já passou. Por favor, agende para o futuro."
-                    )
-                    return
-            
-            # Final, final check for start_dt_naive
+            # Final check para garantir que start_dt_naive esteja no futuro
             if start_dt_naive <= now_aware.replace(tzinfo=None):
                 await update.message.reply_text(
                     "❌ A data/hora de início agendada já passou. Por favor, agende para o futuro."
@@ -434,7 +415,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         now_aware_for_job_check = datetime.datetime.now(sao_paulo_tz)
 
         # Verificação final de que a data/hora de início está no futuro
-        if task_start_datetime_aware <= now_aware_for_job_check:
+        # Usamos um buffer de segundos para não falhar por milissegundos
+        if task_start_datetime_aware <= now_aware_for_job_check - datetime.timedelta(seconds=5): 
             await update.message.reply_text(
                 "❌ A data/hora de início agendada já passou. Por favor, agende para o futuro."
             )
@@ -456,8 +438,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # --- AGENDANDO O ALERTA DE FIM (SE HOUVER) ---
         if task_end_datetime_aware:
             # Garante que o alerta de fim não seja antes do alerta de início
+            # Se a hora de fim é menor que a de início no mesmo dia (ex: 23h-02h), significa dia seguinte
             if task_end_datetime_aware <= task_start_datetime_aware:
-                task_end_datetime_aware += datetime.timedelta(days=1) # Ajusta para o dia seguinte se for o caso de 23h as 02h
+                task_end_datetime_aware += datetime.timedelta(days=1)
 
             logger.info(f"⏳ [AGENDAMENTO] Preparando para agendar job de FIM. Horário do Job (Aware SP): {task_end_datetime_aware}")
             context.job_queue.run_once(
