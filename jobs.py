@@ -1,5 +1,3 @@
-# jobs.py
-
 import os
 import json
 import datetime
@@ -10,8 +8,15 @@ from telegram.constants import ParseMode
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import pandas as pd
+import pytz # Importado para lidar com fusos horários
+from dateparser import parse # dateparser está nas suas requirements
 
-DADOS_FILE = "dados.json"
+# Define o diretório da aplicação para garantir caminhos de arquivo corretos
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+DADOS_FILE = os.path.join(APP_DIR, "dados.json")
+
+# Define o fuso horário para as operações do seu bot
+TIMEZONE = 'America/Sao_Paulo'
 
 
 def load_data():
@@ -30,12 +35,15 @@ def daily_feedback_job(context):
     bot: Bot = context.bot
     data = load_data()
 
+    # Pega a data de hoje no fuso horário especificado
+    today = datetime.datetime.now(pytz.timezone(TIMEZONE)).date()
+
     for chat_id, user in data.items():
         feitas = [t for t in user.get("tarefas", []) if t.get("done")]
         pendentes = [t for t in user.get("tarefas", []) if not t.get("done")]
 
         msg = []
-        msg.append(f"📋 *Resumo do Dia* ({datetime.date.today():%d/%m/%Y}):")
+        msg.append(f"📋 *Resumo do Dia* ({today:%d/%m/%Y}):")
         msg.append(f"✔️ Concluídas: {len(feitas)}")
         msg.append(f"❌ Pendentes: {len(pendentes)}")
         msg.append("🎯 Metas semanais:")
@@ -43,7 +51,7 @@ def daily_feedback_job(context):
             prog = m.get("progress", 0)
             alvo = m.get("target", 1)
             barras = "✅" * prog + "❌" * (alvo - prog)
-            msg.append(f"   • {m['activity']}: {prog}/{alvo} {barras}")
+            msg.append(f"    • {m['activity']}: {prog}/{alvo} {barras}")
 
         destaque = feitas[-1]["activity"] if feitas else "—"
         msg.append(f"🌟 Destaque do dia: {destaque}")
@@ -59,13 +67,16 @@ def weekly_report_job(context):
     bot: Bot = context.bot
     data = load_data()
 
+    # Pega a data de hoje no fuso horário especificado
+    today = datetime.datetime.now(pytz.timezone(TIMEZONE)).date()
+
     for chat_id, user in data.items():
         buffer = BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=A4)
         pdf.setTitle("Relatório Semanal")
 
         y = 800
-        pdf.drawString(50, y, f"Relatório Semanal – Semana de {datetime.date.today():%d/%m/%Y}")
+        pdf.drawString(50, y, f"Relatório Semanal – Semana de {today:%d/%m/%Y}")
         y -= 30
 
         pdf.drawString(50, y, "Metas Semanais:")
@@ -79,6 +90,7 @@ def weekly_report_job(context):
         feitas = [t for t in user.get("tarefas", []) if t.get("done")]
         pdf.drawString(50, y, f"Tarefas concluídas ({len(feitas)}):")
         y -= 20
+        # Mostra as últimas 10 tarefas, ou menos se houver menos de 10
         for t in feitas[-10:]:
             pdf.drawString(60, y, f"- {t['activity']} em {t['when']}")
             y -= 15
@@ -96,13 +108,14 @@ def weekly_report_job(context):
 
 def weekly_backup_job(context):
     data = load_data()
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    # Pega a hora atual no fuso horário especificado para o timestamp do backup
+    timestamp = datetime.datetime.now(pytz.timezone(TIMEZONE)).strftime("%Y%m%d_%H%M")
 
-    # Backup JSON
-    with open(f"backup_{timestamp}.json", "w", encoding="utf-8") as f:
+    # Backup JSON para o diretório da aplicação
+    with open(os.path.join(APP_DIR, f"backup_{timestamp}.json"), "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # Backup CSV
+    # Backup CSV para o diretório da aplicação
     rows = []
     for chat_id, user in data.items():
         for m in user.get("metas", []):
@@ -123,4 +136,4 @@ def weekly_backup_job(context):
             })
 
     df = pd.DataFrame(rows)
-    df.to_csv(f"backup_{timestamp}.csv", index=False)
+    df.to_csv(os.path.join(APP_DIR, f"backup_{timestamp}.csv"), index=False)
