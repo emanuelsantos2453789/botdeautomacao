@@ -1,6 +1,7 @@
-# Seu bot_de_tel.py (ou o arquivo principal)
 import os
 import logging
+import datetime
+import pytz
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -19,8 +20,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Token do seu bot do Telegram
+# Token do seu bot do Telegram (Lembre-se de configurar como variável de ambiente!)
 TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+# Define o fuso horário padrão para o bot
+SAO_PAULO_TZ = pytz.timezone('America/Sao_Paulo')
 
 def main() -> None:
     # 1. Configurar o ApplicationBuilder com JobQueue
@@ -30,28 +34,50 @@ def main() -> None:
     job_queue: JobQueue = application.job_queue
 
     # 3. Agendar os jobs recorrentes (jobs.py)
-    # Agendamento do resumo diário (semanal)
-    # A função daily_feedback_job que você enviou é para um resumo diário, não semanal.
-    # Vou renomeá-la para clarity, mas manterei o agendamento diário para as 20h, como você pediu.
-    job_queue.run_daily(jobs.send_daily_summary_job, time=datetime.time(hour=20, minute=0, tzinfo=pytz.timezone('America/Sao_Paulo')), name="Daily Summary")
+    # Agendamento do resumo noturno diário (tarefas do dia e para amanhã)
+    job_queue.run_daily(jobs.send_daily_summary_job, 
+                        time=datetime.time(hour=20, minute=0, tzinfo=SAO_PAULO_TZ), 
+                        name="Daily Summary")
     
-    # Agendamento do relatório semanal (domingo)
-    # Usaremos WED para simular o domingo, pois WEEKLY é uma opção para um dia da semana específica na v20.
-    # Ajustei para Sunday (0) e a hora do dia para a noite (20:00)
-    job_queue.run_daily(jobs.weekly_report_job, time=datetime.time(hour=20, minute=0, tzinfo=pytz.timezone('America/Sao_Paulo')), days=(0,), name="Weekly Report")
+    # Agendamento do relatório semanal (domingo à noite)
+    job_queue.run_daily(jobs.weekly_report_job, 
+                        time=datetime.time(hour=20, minute=0, tzinfo=SAO_PAULO_TZ), 
+                        days=(0,), # 0 = Domingo
+                        name="Weekly Report")
     
-    # Agendamento do backup semanal (domingo)
-    job_queue.run_daily(jobs.weekly_backup_job, time=datetime.time(hour=23, minute=0, tzinfo=pytz.timezone('America/Sao_Paulo')), days=(0,), name="Weekly Backup")
+    # Agendamento do backup semanal (domingo à noite)
+    job_queue.run_daily(jobs.weekly_backup_job, 
+                        time=datetime.time(hour=23, minute=0, tzinfo=SAO_PAULO_TZ), 
+                        days=(0,), # 0 = Domingo
+                        name="Weekly Backup")
+
+    # Adicionar job para limpar tarefas expiradas/concluídas (uma vez ao dia, por exemplo)
+    job_queue.run_daily(jobs.clean_up_old_tasks_job,
+                        time=datetime.time(hour=2, minute=0, tzinfo=SAO_PAULO_TZ),
+                        name="Clean Up Old Tasks")
+
 
     # Comandos
     application.add_handler(CommandHandler("start", handlers.rotina))
     application.add_handler(CommandHandler("rotina", handlers.rotina))
     application.add_handler(CommandHandler("rotina_semanal", handlers.handle_weekly_routine_input)) # Novo comando
 
+    # Comandos para Pomodoro
+    application.add_handler(CommandHandler("pomodoro", handlers.pomodoro_menu))
+    application.add_handler(CommandHandler("pomodoro_status", handlers.pomodoro_status))
+    application.add_handler(CommandHandler("pomodoro_stop", handlers.pomodoro_stop))
+
+
     # Callback Queries (botões inline)
     application.add_handler(CallbackQueryHandler(handlers.rotina_callback, pattern=r"^menu_"))
     application.add_handler(CallbackQueryHandler(handlers.mark_done_callback, pattern=r"^(mark_done_|feedback_yes_|feedback_no_)"))
-    application.add_handler(CallbackQueryHandler(handlers.delete_meta_callback, pattern=r"^delete_meta_")) # Novo handler para apagar metas
+    application.add_handler(CallbackQueryHandler(handlers.delete_meta_callback, pattern=r"^delete_meta_"))
+    application.add_handler(CallbackQueryHandler(handlers.delete_task_callback, pattern=r"^delete_task_")) # NOVO: Apagar Tarefas
+    
+    # Callbacks para Pomodoro
+    application.add_handler(CallbackQueryHandler(handlers.pomodoro_callback, pattern=r"^pomodoro_"))
+    application.add_handler(CallbackQueryHandler(handlers.pomodoro_set_time_callback, pattern=r"^set_pomodoro_"))
+
 
     # Mensagens de texto (geral)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.handle_text))
@@ -62,6 +88,4 @@ def main() -> None:
     logger.info("Bot finalizado.")
 
 if __name__ == "__main__":
-    import datetime
-    import pytz # Importe pytz aqui para uso no main, se necessário para definir o timezone
     main()
