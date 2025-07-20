@@ -56,7 +56,8 @@ async def send_daily_summary_job(context):
                 continue
 
             # Tarefas de hoje que ainda não foram concluídas e que o tempo ainda não passou (ou passou muito pouco)
-            if task_date == today and not task.get('done', False) and (task_start_dt_aware > now_aware - datetime.timedelta(hours=12)): # Considera 12h para "atrasadas" no resumo noturno
+            # ou que estão "atrasadas" mas ainda no mesmo dia
+            if task_date == today and not task.get('done', False) and task.get('completion_status') != 'not_completed': 
                 tasks_today_pending.append(task)
             # Tarefas agendadas para amanhã
             elif task_date == tomorrow:
@@ -71,6 +72,8 @@ async def send_daily_summary_job(context):
             for t in sorted(tasks_today_pending, key=lambda x: datetime.datetime.fromisoformat(x['start_when']).time()):
                 start_time = datetime.datetime.fromisoformat(t['start_when']).strftime('%H:%M')
                 msg_parts.append(f"• {t['activity']} às {start_time}")
+        else:
+            msg_parts.append("\n✅ Nenhuma tarefa pendente para hoje! Que organização! 🎉")
         
         if tasks_tomorrow_scheduled:
             msg_parts.append(f"\n🗓️ *Sua agenda para AMANHÃ* ({tomorrow.strftime('%d/%m/%Y')}):")
@@ -81,7 +84,7 @@ async def send_daily_summary_job(context):
                     try:
                         end_time_str = f" até {datetime.datetime.fromisoformat(t['end_when']).strftime('%H:%M')}"
                     except (ValueError, TypeError):
-                        pass # Ignora se a data de fim for inválida
+                        pass 
                 msg_parts.append(f"• {t['activity']} às {start_time}{end_time_str}")
         else:
             msg_parts.append("\n🎉 Nada agendado para amanhã ainda! Que tal planejar algo produtivo? 😉")
@@ -114,7 +117,9 @@ async def weekly_report_job(context):
         completed_tasks_week = []
         not_completed_tasks_week = []
         imprevistos_week = []
-        weekly_score_contribution = 0 # Pontos ganhos *nesta semana*
+        # weekly_score_contribution deve ser calculado com base nos pontos efetivamente ganhos na semana
+        # A pontuação total (user.get("score", 0)) já está correta, esta é apenas para o relatório da semana.
+        weekly_score_contribution = 0 
         total_score = user.get("score", 0)
 
         for task in user.get("tarefas", []):
@@ -128,14 +133,15 @@ async def weekly_report_job(context):
             if report_start_date <= task_date <= report_end_date:
                 if task.get('completion_status') == 'completed_on_time' or task.get('completion_status') == 'completed_manually':
                     completed_tasks_week.append(task['activity'])
-                    # Assumimos 10 pontos por tarefa concluída. Isso precisa ser consistente.
-                    # Se você armazenar os pontos ganhos por tarefa, some isso aqui.
-                    # Por enquanto, vou manter a lógica de 10 pontos fixos por tarefa concluída na semana.
-                    weekly_score_contribution += 10 
+                    weekly_score_contribution += 10 # Cada tarefa concluída contribui com 10 pontos
                 elif task.get('completion_status') == 'not_completed':
                     not_completed_tasks_week.append(task['activity'])
                     if task.get('reason_not_completed'):
                         imprevistos_week.append(f"- *{task['activity']}*: {task['reason_not_completed']}")
+            
+            # TODO: Idealmente, para pontuação de Pomodoro na semana, seria necessário registrar os pontos do pomodoro por dia/semana.
+            # Por enquanto, weekly_score_contribution só considera as tarefas. O total já soma tudo.
+
 
         # --- Envio do resumo semanal via mensagem de texto ---
         summary_message = f"🎉 *Seu Relatório Semanal de Brilho* ({report_start_date.strftime('%d/%m')} a {report_end_date.strftime('%d/%m')}): ✨\n\n"
@@ -166,7 +172,7 @@ async def weekly_report_job(context):
             summary_message += "\n*⚠️ Imprevistos e Desafios:*\n"
             summary_message += "\n".join(imprevistos_week) + "\n"
 
-        summary_message += f"\n📊 *Pontuação da Semana*: *{weekly_score_contribution}* pontos!\n"
+        summary_message += f"\n📊 *Pontuação da Semana (Tarefas)*: *{weekly_score_contribution}* pontos!\n"
         summary_message += f"🏆 *Pontuação Total Acumulada*: *{total_score}* pontos!\n\n"
         summary_message += "Cada passo conta! Continue firme na sua jornada! Você é incrível! ✨"
 
@@ -254,7 +260,7 @@ async def weekly_report_job(context):
         y -= 20
         pdf.setFont("Helvetica-Bold", 14)
         if y < 100: pdf.showPage(); y = 780; pdf.setFont("Helvetica-Bold", 14)
-        pdf.drawString(50, y, f"📊 Pontuação da Semana: {weekly_score_contribution} pontos")
+        pdf.drawString(50, y, f"📊 Pontuação da Semana (Tarefas): {weekly_score_contribution} pontos")
         y -= 20
         if y < 100: pdf.showPage(); y = 780; pdf.setFont("Helvetica-Bold", 14)
         pdf.drawString(50, y, f"🏆 Pontuação Total Acumulada: {total_score} pontos")
@@ -264,7 +270,6 @@ async def weekly_report_job(context):
         if y < 100: pdf.showPage(); y = 780; pdf.setFont("Helvetica-Oblique", 10)
         pdf.drawString(50, y, "Lembre-se: Cada passo, por menor que seja, te leva mais perto dos seus sonhos! Continue a brilhar! ✨")
 
-        pdf.showPage()
         pdf.save()
         buffer.seek(0)
 
@@ -338,40 +343,26 @@ async def clean_up_old_tasks_job(context):
     tasks_cleaned_count = 0
     for chat_id, user_data in data.items():
         if "tarefas" in user_data:
-            # Mantém apenas as tarefas que não estão 'done' ou que são recentes (últimos 30 dias)
-            # Remove tarefas concluídas que sejam mais antigas que 7 dias
-            # Remove tarefas não concluídas que sejam mais antigas que 30 dias
-            
-            # Ajustei a lógica de remoção:
-            # Se uma tarefa estiver "done", ela é mantida por 7 dias. Após isso, é removida.
-            # Se uma tarefa não estiver "done" e o horário de fim (ou início se não tiver fim) já passou há mais de 30 dias, é removida.
-            # Tarefas recorrentes que não foram "done" mas já passaram, serão mantidas na lista de não-concluídas, mas seu job será removido.
-            
             updated_tasks = []
             for task in user_data["tarefas"]:
                 try:
                     task_start_dt_naive = datetime.datetime.fromisoformat(task['start_when'])
                     task_dt_aware = SAO_PAULO_TZ.localize(task_start_dt_naive)
                     
-                    # Calcula a data de referência para remoção
-                    reference_date = task_dt_aware
-                    if task.get('end_when'):
-                        end_dt_naive = datetime.datetime.fromisoformat(task['end_when'])
-                        end_dt_aware = SAO_PAULO_TZ.localize(end_dt_naive)
-                        reference_date = end_dt_aware
+                    # Usa a data de fim se existir, senão usa a de início
+                    reference_dt_aware = SAO_PAULO_TZ.localize(datetime.datetime.fromisoformat(task['end_when'])) if task.get('end_when') else task_dt_aware
                         
                     if task.get('done', False):
                         # Se concluída, remove se tiver mais de 7 dias
-                        if (now_aware - reference_date).days > 7:
+                        if (now_aware - reference_dt_aware).days > 7:
                             tasks_cleaned_count += 1
-                            # Não precisamos cancelar jobs aqui, eles já deveriam ter rodado ou sido cancelados ao marcar como done
-                            continue # Não adiciona à lista
+                            continue 
                     elif task.get('completion_status') == 'not_completed':
                         # Se não concluída, remove se tiver mais de 30 dias
-                        if (now_aware - reference_date).days > 30:
+                        if (now_aware - reference_dt_aware).days > 30:
                             tasks_cleaned_count += 1
-                            continue # Não adiciona à lista
-                    elif reference_date < now_aware - datetime.timedelta(days=30):
+                            continue 
+                    elif reference_dt_aware < now_aware - datetime.timedelta(days=30):
                          # Tarefas pendentes muito antigas (mais de 30 dias atrás) que não foram marcadas
                          tasks_cleaned_count += 1
                          continue
