@@ -59,59 +59,69 @@ def main() -> None:
                         name="Clean Up Old Tasks")
 
 
-    # --- Comandos ---
-    application.add_handler(CommandHandler("start", handlers.main_menu))
-    application.add_handler(CommandHandler("menu", handlers.main_menu))
-    application.add_handler(CommandHandler("tarefas", handlers.list_tasks))
+     # --- Handlers de Comandos ---
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("add_task", add_task_command))
+    application.add_handler(CommandHandler("tasks", show_tasks_command))
+    application.add_handler(CommandHandler("pomodoro", pomodoro_menu))
+    application.add_handler(CommandHandler("routine", show_weekly_routine_command))
+    application.add_handler(CommandHandler("goals", view_weekly_goals_command))
+    application.add_handler(CommandHandler("set_goal", set_weekly_goal_command))
+    application.add_handler(CommandHandler("set_routine", handle_weekly_routine_input))
 
-    application.add_handler(CommandHandler("rotina_semanal", handlers.handle_weekly_routine_input))
-    application.add_handler(CommandHandler("ver_rotina", handlers.view_weekly_routine))
-    
-    # Comandos para Pomodoro
-    application.add_handler(CommandHandler("pomodoro", handlers.pomodoro_menu))
-    application.add_handler(CommandHandler("pomodoro_status", handlers.pomodoro_status))
-    application.add_handler(CommandHandler("pomodoro_stop", handlers.pomodoro_stop))
+    # --- Handlers de Callbacks de Botões Inline ---
+    application.add_handler(CallbackQueryHandler(main_menu, pattern="^main_menu$"))
+    application.add_handler(CallbackQueryHandler(list_tasks, pattern="^list_tasks_"))
+    application.add_handler(CallbackQueryHandler(select_task_to_mark_done, pattern="^select_task_to_mark_done$"))
+    application.add_handler(CallbackQueryHandler(mark_task_done_callback, pattern="^mark_done_id_"))
+    application.add_handler(CallbackQueryHandler(select_task_to_delete, pattern="^select_task_to_delete$"))
+    application.add_handler(CallbackQueryHandler(feedback_yes_id_callback, pattern="^feedback_yes_id_"))
+    application.add_handler(CallbackQueryHandler(feedback_no_id_callback, pattern="^feedback_no_id_"))
+    application.add_handler(CallbackQueryHandler(feedback_postpone_id_callback, pattern="^feedback_postpone_id_"))
+    application.add_handler(CallbackQueryHandler(feedback_delete_id_callback, pattern="^feedback_delete_id_"))
+    application.add_handler(CallbackQueryHandler(add_new_task_menu, pattern="^add_new_task_menu$"))
+    application.add_handler(CallbackQueryHandler(add_task_no_datetime, pattern="^add_task_no_datetime$"))
+    application.add_handler(CallbackQueryHandler(add_task_no_duration, pattern="^add_task_no_duration$"))
 
-    # Comandos para Metas
-    application.add_handler(CommandHandler("meta_semanal", handlers.set_weekly_goal_command))
-    application.add_handler(CommandHandler("ver_metas", handlers.view_weekly_goals_command))
 
-    # --- Callback Queries (botões inline) ---
-    application.add_handler(CallbackQueryHandler(handlers.main_menu, pattern=r"^main_menu$"))
-    application.add_handler(CallbackQueryHandler(handlers.list_tasks, pattern=r"^list_tasks_"))
-    application.add_handler(CallbackQueryHandler(handlers.mark_goal_done_callback, pattern=r"^(mark_done_|feedback_yes_|feedback_no_|feedback_postpone_|feedback_delete_)"))
-    application.add_handler(CallbackQueryHandler(handlers.delete_meta_callback, pattern=r"^delete_meta_")) 
-    application.add_handler(CallbackQueryHandler(handlers.delete_task_callback, pattern=r"^delete_task_"))
-    
-    # Callbacks para Pomodoro
-    application.add_handler(CallbackQueryHandler(handlers.pomodoro_callback, pattern=r"^pomodoro_"))
-    application.add_handler(CallbackQueryHandler(handlers.pomodoro_set_time_callback, pattern=r"^set_pomodoro_"))
-    application.add_handler(CallbackQueryHandler(handlers.pomodoro_menu, pattern=r"^menu_pomodoro$"))
+    # Handlers para Pomodoro
+    application.add_handler(CallbackQueryHandler(pomodoro_menu, pattern="^menu_pomodoro$"))
+    application.add_handler(CallbackQueryHandler(pomodoro_callback, pattern="^pomodoro_start$"))
+    application.add_handler(CallbackQueryHandler(pomodoro_callback, pattern="^pomodoro_pause$"))
+    application.add_handler(CallbackQueryHandler(pomodoro_callback, pattern="^pomodoro_resume$"))
+    application.add_handler(CallbackQueryHandler(pomodoro_stop, pattern="^pomodoro_stop_command$")) # Usa a função direta
+    application.add_handler(CallbackQueryHandler(pomodoro_callback, pattern="^pomodoro_config_times$"))
+    application.add_handler(CallbackQueryHandler(pomodoro_status, pattern="^pomodoro_status_command$")) # Usa a função direta
+    application.add_handler(CallbackQueryHandler(pomodoro_set_time_callback, pattern="^set_pomodoro_"))
 
-    # Callbacks para Rotina Semanal
-    application.add_handler(CallbackQueryHandler(handlers.edit_full_weekly_routine_callback, pattern=r"^edit_full_weekly_routine$"))
-    application.add_handler(CallbackQueryHandler(handlers.delete_item_weekly_routine_callback, pattern=r"^delete_item_weekly_routine$"))
-    application.add_handler(CallbackQueryHandler(handlers.delete_routine_task_confirm_callback, pattern=r"^delete_routine_task_confirm_"))
-    application.add_handler(CallbackQueryHandler(handlers.view_weekly_routine_menu_callback, pattern=r"^view_weekly_routine_menu$"))
+    # Handlers para Rotina Semanal
+    application.add_handler(CallbackQueryHandler(show_weekly_routine_command, pattern="^show_weekly_routine_command$"))
+    application.add_handler(CallbackQueryHandler(edit_full_weekly_routine_callback, pattern="^edit_full_weekly_routine$"))
+    application.add_handler(CallbackQueryHandler(delete_item_weekly_routine_callback, pattern="^delete_item_weekly_routine$"))
+    application.add_handler(CallbackQueryHandler(delete_routine_task_confirm_callback, pattern="^delete_routine_task_by_id_"))
+    application.add_handler(CallbackQueryHandler(view_weekly_routine_menu_callback, pattern="^view_weekly_routine_menu$"))
 
-    # Callbacks para Metas Semanais
-    application.add_handler(CallbackQueryHandler(handlers.set_weekly_goal_command_cb, pattern=r"^set_weekly_goal_command_cb$"))
-    application.add_handler(CallbackQueryHandler(handlers.delete_weekly_goal_menu, pattern=r"^delete_weekly_goal_menu$"))
-    application.add_handler(CallbackQueryHandler(handlers.delete_weekly_goal_confirm_callback, pattern=r"^delete_weekly_goal_confirm_"))
-    application.add_handler(CallbackQueryHandler(handlers.view_weekly_goals_command, pattern=r"^view_weekly_goals_command$"))
 
-    # Callbacks para Relatórios (se estas funções estiverem em handlers.py)
-    application.add_handler(CallbackQueryHandler(handlers.show_reports_menu, pattern=r"^show_reports_menu$"))
-    application.add_handler(CallbackQueryHandler(handlers.get_daily_feedback_callback, pattern=r"^get_daily_feedback$"))
-    application.add_handler(CallbackQueryHandler(handlers.get_weekly_feedback_callback, pattern=r"^get_weekly_feedback$"))
+    # Handlers para Metas Semanais
+    application.add_handler(CallbackQueryHandler(view_weekly_goals_command, pattern="^view_weekly_goals_command$"))
+    application.add_handler(CallbackQueryHandler(set_weekly_goal_command_cb, pattern="^set_weekly_goal_command_cb$"))
+    application.add_handler(CallbackQueryHandler(select_goal_to_mark_done, pattern="^select_goal_to_mark_done$"))
+    application.add_handler(CallbackQueryHandler(mark_goal_done_callback, pattern="^mark_goal_done_id_"))
+    application.add_handler(CallbackQueryHandler(delete_weekly_goal_menu, pattern="^delete_weekly_goal_menu$"))
+    application.add_handler(CallbackQueryHandler(delete_weekly_goal_confirm_callback, pattern="^delete_weekly_goal_confirm_id_"))
 
-    # Mensagens de texto (genérico) - DEVE SER O ÚLTIMO
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.handle_text_input))
+    # Handlers para Relatórios
+    application.add_handler(CallbackQueryHandler(show_reports_menu, pattern="^show_reports_menu$"))
+    application.add_handler(CallbackQueryHandler(get_daily_feedback_callback, pattern="^get_daily_feedback$"))
+    application.add_handler(CallbackQueryHandler(get_weekly_feedback_callback, pattern="^get_weekly_feedback$"))
 
-    # Iniciar o bot
-    logger.info("Bot iniciando polling...")
+
+    # --- Handler de Mensagens de Texto (para inputs de estados) ---
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Inicia o bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-    logger.info("Bot finalizado.")
+
 
 if __name__ == "__main__":
     main()
