@@ -60,7 +60,7 @@ def main() -> None:
 
 
      # --- Handlers de Comandos ---
-    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("start",handlers.main_menu))
     application.add_handler(CommandHandler("add_task", add_task_command))
     application.add_handler(CommandHandler("tasks", show_tasks_command))
     application.add_handler(CommandHandler("pomodoro", pomodoro_menu))
