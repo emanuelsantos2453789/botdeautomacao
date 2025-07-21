@@ -1,6 +1,14 @@
 # main.py
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    ContextTypes,
+    MessageHandler, # <-- Adicione esta importação
+    filters # <-- Adicione esta importação
+)
 
 from handlers.pomodoro import Pomodoro # Importa a classe Pomodoro
 
@@ -11,7 +19,6 @@ TOKEN = "8025423173:AAE4cX3_UVQEigT64VWZfloN9IiJD-yVMY"
 user_pomodoros = {}
 
 # --- Estados da Conversa Global (se houver mais módulos no futuro) ---
-# Por enquanto, apenas o estado inicial para o menu principal
 MAIN_MENU_STATE = 0
 
 
@@ -45,6 +52,7 @@ async def open_pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         user_pomodoros[user_id] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
     
     # Chama o método que mostra o menu do Pomodoro
+    # ATENÇÃO: Retornamos o estado do Pomodoro aqui para o ConversationHandler principal
     return await user_pomodoros[user_id]._show_pomodoro_menu(update, context)
 
 
@@ -84,6 +92,7 @@ def main():
 
     # Cria uma instância "vazia" de Pomodoro apenas para acessar o ConversationHandler
     # A instância real para o usuário será criada no `open_pomodoro_menu`
+    # Importante: Passe o 'application' para que a instância do Pomodoro possa acessar o loop de eventos
     temp_pomodoro_instance = Pomodoro() 
 
     # Constrói o ConversationHandler para o fluxo principal do bot
@@ -99,16 +108,16 @@ def main():
             # Ele "pega" a conversa quando o padrão do CallbackQueryHandler é acionado
             # e a libera quando `ConversationHandler.END` é retornado de dentro dele.
             temp_pomodoro_instance.POMODORO_MENU_STATE: [
+                # Este é o ConversationHandler aninhado do Pomodoro
                 temp_pomodoro_instance.get_pomodoro_conversation_handler(),
-                CallbackQueryHandler(return_to_main_menu, pattern="^main_menu_return$"), # Handler para o botão "Voltar ao Início"
             ]
         },
         fallbacks=[
+            # Handler para o botão "Voltar ao Início" que sai do Pomodoro e volta ao Main Menu
+            CallbackQueryHandler(return_to_main_menu, pattern="^main_menu_return$"),
             # Fallback para mensagens não reconhecidas em qualquer estado
             MessageHandler(filters.ALL, fallback_global),
         ],
-        # `per_user=True` é o padrão para ConversationHandler, o que é bom para nosso caso de múltiplos usuários
-        # `allow_reentry=True` permite reentrar no mesmo ConversationHandler se ele já terminou
     )
 
     application.add_handler(main_conversation_handler)
