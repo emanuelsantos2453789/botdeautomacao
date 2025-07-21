@@ -119,6 +119,10 @@ def main() -> None:
         # --- Handler de Mensagens de Texto (para inputs de estados) ---
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.handle_message))
 
+        # REGISTRAR O MANIPULADOR DE ERROS GLOBAL AQUI
+        application.add_error_handler(handlers.error_handler)
+        logger.info("Manipulador de erros global registrado.")
+
         # Inicia o bot
         logger.info("Bot iniciado com sucesso! Escutando por atualizações...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
