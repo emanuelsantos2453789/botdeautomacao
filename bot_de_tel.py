@@ -79,7 +79,7 @@ def main() -> None:
     # --- Callback Queries (botões inline) ---
     application.add_handler(CallbackQueryHandler(handlers.main_menu, pattern=r"^main_menu$"))
     application.add_handler(CallbackQueryHandler(handlers.list_tasks, pattern=r"^list_tasks_"))
-    application.add_handler(CallbackQueryHandler(handlers.mark_done_callback, pattern=r"^(mark_done_|feedback_yes_|feedback_no_|feedback_postpone_|feedback_delete_)"))
+    application.add_handler(CallbackQueryHandler(handlers.mark_goal_done_callback, pattern=r"^(mark_done_|feedback_yes_|feedback_no_|feedback_postpone_|feedback_delete_)"))
     application.add_handler(CallbackQueryHandler(handlers.delete_meta_callback, pattern=r"^delete_meta_")) 
     application.add_handler(CallbackQueryHandler(handlers.delete_task_callback, pattern=r"^delete_task_"))
     
