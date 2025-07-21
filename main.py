@@ -11,6 +11,7 @@ TOKEN = "BOT_TOKEN"
 async def start(update, context):
     """Responde ao comando /start."""
     await update.message.reply_text("Olá! Eu sou seu novo bot. Como posso ajudar hoje?")
+    print("EU Estou Aqui")
 
 # Esta função será executada quando o usuário enviar uma mensagem de texto (que não seja um comando)
 async def ecoar_mensagem(update, context):
