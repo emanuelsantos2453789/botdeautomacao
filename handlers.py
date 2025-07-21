@@ -4,7 +4,7 @@ import re
 import json
 from collections import defaultdict
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes, JobQueue
+from telegram.ext import ContextTypes, JobQueue, Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 import asyncio
 import logging
 import uuid # Para gerar IDs únicos para tarefas
@@ -28,7 +28,7 @@ def load_data():
         logger.info("Arquivo 'dados.json' não encontrado. Criando um novo.")
         return {}
     except json.JSONDecodeError:
-        logger.error("Erro ao decodificar JSON em dados.json. Retornando dados vazios.")
+        logger.error("Erro ao decodificar JSON em dados.json. Retornando dados vazios.", exc_info=True)
         return {}
 
 def save_data(data):
@@ -55,14 +55,14 @@ def cancel_task_jobs(chat_id: str, job_names: list, job_queue: JobQueue):
         return
 
     jobs_cancelled_count = 0
-    # Usar um set para evitar cancelar o mesmo job várias vezes se o nome for duplicado na lista
     unique_job_names = set(job_names)
 
     for job_name in unique_job_names:
         jobs_to_remove = job_queue.get_jobs_by_name(job_name)
         for job in jobs_to_remove:
-            if job.chat_id == int(chat_id): # Garante que o job pertence a este chat_id
-                if job.enabled: # Apenas remove se o job ainda estiver ativo
+            # Importante: job.chat_id é um inteiro
+            if job.chat_id == int(chat_id):
+                if job.enabled:
                     job.schedule_removal()
                     jobs_cancelled_count += 1
                     logger.info(f"Job '{job.name}' cancelado para o chat {chat_id}.")
@@ -94,14 +94,13 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             pomodoro_config[setting_type] = value
             save_data(db)
 
-            # Atualiza o dicionário em memória também, para consistência
             pomodoro_timers[chat_id][setting_type] = value
 
             await update.message.reply_text(f"✅ Tempo de *{setting_type.replace('_', ' ')}* definido para *{value} minutos*! 🎉", parse_mode='Markdown')
 
             context.user_data.pop("expecting", None)
             context.user_data.pop("pomodoro_setting_type", None)
-            await pomodoro_menu(update, context) # Reabre o menu do Pomodoro
+            await pomodoro_menu(update, context)
             return
         except ValueError as ve:
             logger.error(f"Erro de valor ao configurar Pomodoro para {chat_id}: {ve}", exc_info=True)
@@ -114,27 +113,34 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # Lógica para coletar motivo de não conclusão da tarefa (feedback diário)
     if context.user_data.get("expecting") == "reason_for_not_completion":
-        task_idx = context.user_data.get("task_idx_for_reason")
+        # Usamos o ID da tarefa agora, não o índice
+        task_id = context.user_data.get("task_id_for_reason")
         db = load_data()
         user_data = db.setdefault(chat_id, {})
         tarefas = user_data.setdefault("tarefas", [])
 
-        if task_idx is not None and 0 <= task_idx < len(tarefas):
-            tarefas[task_idx]["reason_not_completed"] = text
-            tarefas[task_idx]["completion_status"] = "not_completed_with_reason"
-            tarefas[task_idx]["done"] = False
+        found_task = None
+        for t in tarefas:
+            if t.get('id') == task_id:
+                found_task = t
+                break
+
+        if found_task:
+            found_task["reason_not_completed"] = text
+            found_task["completion_status"] = "not_completed_with_reason"
+            found_task["done"] = False
             save_data(db)
             await update.message.reply_text(
-                f"✍️ Entendido! O motivo para a não conclusão de *'{tarefas[task_idx]['activity']}'* foi registrado. Obrigado pelo feedback! Vamos melhorar juntos! 💪",
+                f"✍️ Entendido! O motivo para a não conclusão de *'{found_task['activity']}'* foi registrado. Obrigado pelo feedback! Vamos melhorar juntos! 💪",
                 parse_mode='Markdown'
             )
-            logger.info(f"Motivo de não conclusão registrado para tarefa {tarefas[task_idx]['activity']}: {text}")
+            logger.info(f"Motivo de não conclusão registrado para tarefa {found_task['activity']}: {text}")
         else:
             await update.message.reply_text("🤔 Não consegui vincular o motivo a uma tarefa. Por favor, tente novamente ou use o menu para marcar tarefas.")
-            logger.warning(f"Motivo de não conclusão recebido sem task_idx válido ou tarefa não encontrada para {chat_id}. Texto: {text}")
+            logger.warning(f"Motivo de não conclusão recebido sem task_id válido ou tarefa não encontrada para {chat_id}. Texto: {text}")
 
         context.user_data.pop("expecting", None)
-        context.user_data.pop("task_idx_for_reason", None)
+        context.user_data.pop("task_id_for_reason", None)
         return
 
     # Lógica para entrada da rotina semanal
@@ -203,11 +209,10 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "job_names": []
         }
         tarefas.append(new_task_data)
-        current_task_idx = len(tarefas) - 1 # O JobQueue ainda usa o idx, mas o ID é mais robusto
-
+        
         # Agendar jobs para esta tarefa avulsa, se tiver data/hora
         if start_dt_aware:
-            await schedule_single_task_jobs(chat_id, new_task_data, current_task_idx, context.job_queue)
+            await schedule_single_task_jobs(chat_id, new_task_data, None, context.job_queue) # Não passamos mais o idx
 
         save_data(db)
 
@@ -239,171 +244,196 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     cmd = query.data
     logger.info(f"Usuário {chat_id} clicou em callback: {cmd}.")
 
-    if cmd.startswith("mark_done_") or cmd.startswith("feedback_yes_"):
+    if cmd.startswith("mark_done_id_") or cmd.startswith("feedback_yes_id_"):
         try:
-            # Extrai o índice da tarefa do callback_data
-            idx = int(cmd.split("_")[-1]) # Pega o último elemento depois de splitar por '_'
-        except (IndexError, ValueError):
-            logger.error(f"Erro ao parsear índice do callback_data: {cmd}")
+            task_id = cmd.split("_id_")[-1]
+        except IndexError:
+            logger.error(f"Erro ao parsear ID da tarefa do callback_data: {cmd}")
             await query.edit_message_text("❌ Erro ao identificar a tarefa. Por favor, tente novamente!")
             return
 
-        if 0 <= idx < len(tarefas):
-            if not tarefas[idx].get('done'):
-                tarefas[idx]["done"] = True
-                # Define o status de conclusão com base na origem
-                tarefas[idx]["completion_status"] = "completed_manually" if cmd.startswith("mark_done_") else "completed_on_time"
-                tarefas[idx]["reason_not_completed"] = None
+        found_task = None
+        for task in tarefas:
+            if task.get('id') == task_id:
+                found_task = task
+                break
+
+        if found_task:
+            if not found_task.get('done'):
+                found_task["done"] = True
+                found_task["completion_status"] = "completed_manually" if cmd.startswith("mark_done_") else "completed_on_time"
+                found_task["reason_not_completed"] = None
 
                 user_data["score"] = user_data.get("score", 0) + 10
                 logger.info(f"Usuário {chat_id} ganhou 10 pontos. Pontuação atual: {user_data['score']}.")
 
-                # Cancela apenas os jobs desta tarefa
-                cancel_task_jobs(chat_id, tarefas[idx].get("job_names", []), context.job_queue)
+                cancel_task_jobs(chat_id, found_task.get("job_names", []), context.job_queue)
 
                 save_data(db)
-                await query.edit_message_text(
-                    f"✅ EBA! Tarefa *“{tarefas[idx]['activity']}”* marcada como concluída! Mandou muito bem! 🎉 Você ganhou 10 pontos! 🌟", parse_mode='Markdown'
-                )
-                logger.info(f"Tarefa '{tarefas[idx]['activity']}' marcada como concluída para o usuário {chat_id}.")
+                # Adicionar verificação para evitar BadRequest: message not modified
+                new_message_text = f"✅ EBA! Tarefa *“{found_task['activity']}”* marcada como concluída! Mandou muito bem! 🎉 Você ganhou 10 pontos! 🌟"
+                if query.message.text != new_message_text:
+                    await query.edit_message_text(new_message_text, parse_mode='Markdown')
+                else:
+                    await query.answer("Esta tarefa já está concluída!") # Apenas um feedback para o usuário
+                logger.info(f"Tarefa '{found_task['activity']}' marcada como concluída para o usuário {chat_id}.")
             else:
                 await query.edit_message_text(f"Esta tarefa já foi marcada como concluída! Que eficiência! 😉")
         else:
             await query.edit_message_text("❌ Não encontrei essa tarefa para marcar como concluída. Ela pode já ter sido concluída ou apagada. 🤔")
-            logger.warning(f"Tentativa de marcar tarefa com índice inválido {idx} para o usuário {chat_id}.")
-        context.user_data.pop("expecting", None) # Limpa o estado após feedback
+            logger.warning(f"Tentativa de marcar tarefa com ID inválido {task_id} para o usuário {chat_id}.")
+        context.user_data.pop("expecting", None)
         return
 
-    if cmd.startswith("feedback_no_"):
+    if cmd.startswith("feedback_no_id_"):
         try:
-            task_idx = int(cmd.split("_")[2])
-        except (IndexError, ValueError):
-            logger.error(f"Erro ao parsear índice do callback_data: {cmd}")
+            task_id = cmd.split("_id_")[1]
+        except IndexError:
+            logger.error(f"Erro ao parsear ID da tarefa do callback_data: {cmd}")
             await query.edit_message_text("❌ Erro ao identificar a tarefa para feedback. Que pena! 😔")
             return
 
-        if task_idx is not None and 0 <= task_idx < len(tarefas):
-            if not tarefas[task_idx].get('done'):
-                tarefas[task_idx]["completion_status"] = "not_completed_awaiting_reason"
-                tarefas[task_idx]["done"] = False
+        found_task = None
+        for task in tarefas:
+            if task.get('id') == task_id:
+                found_task = task
+                break
+
+        if found_task:
+            if not found_task.get('done'):
+                found_task["completion_status"] = "not_completed_awaiting_reason"
+                found_task["done"] = False
                 save_data(db)
 
-                cancel_task_jobs(chat_id, tarefas[task_idx].get("job_names", []), context.job_queue)
+                cancel_task_jobs(chat_id, found_task.get("job_names", []), context.job_queue)
 
                 context.user_data["expecting"] = "reason_for_not_completion"
-                context.user_data["task_idx_for_reason"] = task_idx
-                await query.edit_message_text(f"😔 Ah, que pena! A tarefa *'{tarefas[task_idx]['activity']}'* não foi concluída. Por favor, digite o motivo: foi um imprevisto, falta de tempo, ou algo mais? Me conta para aprendermos juntos! 👇", parse_mode='Markdown')
-                logger.info(f"Solicitando motivo de não conclusão para a tarefa '{tarefas[task_idx]['activity']}'.")
+                context.user_data["task_id_for_reason"] = task_id # Armazena o ID
+                await query.edit_message_text(f"😔 Ah, que pena! A tarefa *'{found_task['activity']}'* não foi concluída. Por favor, digite o motivo: foi um imprevisto, falta de tempo, ou algo mais? Me conta para aprendermos juntos! 👇", parse_mode='Markdown')
+                logger.info(f"Solicitando motivo de não conclusão para a tarefa '{found_task['activity']}'.")
             else:
                 await query.edit_message_text(f"Esta tarefa já foi concluída! Que bom! 😊")
         else:
             await query.edit_message_text("🤔 Não encontrei a tarefa para registrar o motivo. Ela pode já ter sido concluída ou apagada. Por favor, tente novamente!")
-            logger.warning(f"Não encontrei tarefa com índice {task_idx} para solicitar motivo de não conclusão via feedback 'Não'.")
+            logger.warning(f"Não encontrei tarefa com ID {task_id} para solicitar motivo de não conclusão via feedback 'Não'.")
         return
 
-    if cmd.startswith("feedback_postpone_"):
+    if cmd.startswith("feedback_postpone_id_"):
         try:
-            task_idx = int(cmd.split("_")[2])
-        except (IndexError, ValueError):
-            logger.error(f"Erro ao parsear índice do callback_data: {cmd}")
+            task_id = cmd.split("_id_")[1]
+        except IndexError:
+            logger.error(f"Erro ao parsear ID da tarefa do callback_data: {cmd}")
             await query.edit_message_text("❌ Erro ao identificar a tarefa para adiar. Que pena! 😔")
             return
 
-        if task_idx is not None and 0 <= task_idx < len(tarefas):
-            task = tarefas[task_idx]
-            if not task.get('done'):
+        found_task = None
+        for task in tarefas:
+            if task.get('id') == task_id:
+                found_task = task
+                break
+
+        if found_task:
+            if not found_task.get('done'):
                 now_aware = datetime.datetime.now(SAO_PAULO_TZ)
 
-                if task.get('start_when'):
-                    original_start_dt_naive = datetime.datetime.fromisoformat(task['start_when'])
+                if found_task.get('start_when'):
+                    original_start_dt_naive = datetime.datetime.fromisoformat(found_task['start_when'])
                     original_time = original_start_dt_naive.time()
 
                     new_start_dt_naive = datetime.datetime.combine(now_aware.date() + datetime.timedelta(days=1), original_time)
                     new_start_dt_aware = SAO_PAULO_TZ.localize(new_start_dt_naive)
 
-                    if task.get('end_when'):
-                        original_end_dt_naive = datetime.datetime.fromisoformat(task['end_when'])
+                    if found_task.get('end_when'):
+                        original_end_dt_naive = datetime.datetime.fromisoformat(found_task['end_when'])
                         original_end_time = original_end_dt_naive.time()
                         new_end_dt_naive = datetime.datetime.combine(now_aware.date() + datetime.timedelta(days=1), original_end_time)
                         new_end_dt_aware = SAO_PAULO_TZ.localize(new_end_dt_naive)
                         if new_end_dt_aware < new_start_dt_aware:
                             new_end_dt_aware += datetime.timedelta(days=1)
-                        task['end_when'] = new_end_dt_aware.isoformat()
+                        found_task['end_when'] = new_end_dt_aware.isoformat()
                     else:
-                        task['end_when'] = None
+                        found_task['end_when'] = None
                 else:
                     new_start_dt_naive = datetime.datetime.combine(now_aware.date() + datetime.timedelta(days=1), datetime.time(9,0)) # Adia para 9h do dia seguinte
                     new_start_dt_aware = SAO_PAULO_TZ.localize(new_start_dt_naive)
-                    task['end_when'] = None
+                    found_task['end_when'] = None
 
-                task['start_when'] = new_start_dt_aware.isoformat()
-                task["completion_status"] = "postponed"
-                task["reason_not_completed"] = "Adiada pelo usuário"
-                task["done"] = False
+                found_task['start_when'] = new_start_dt_aware.isoformat()
+                found_task["completion_status"] = "postponed"
+                found_task["reason_not_completed"] = "Adiada pelo usuário"
+                found_task["done"] = False
 
-                cancel_task_jobs(chat_id, task.get("job_names", []), context.job_queue)
-                task["job_names"] = [] # Limpa a lista de job_names antigos
-                # Re-agenda a tarefa para o novo horário
-                await schedule_single_task_jobs(chat_id, task, task_idx, context.job_queue)
+                cancel_task_jobs(chat_id, found_task.get("job_names", []), context.job_queue)
+                found_task["job_names"] = [] # Limpa a lista de job_names antigos
+                await schedule_single_task_jobs(chat_id, found_task, None, context.job_queue) # Não passamos o idx
 
                 save_data(db)
-                await query.edit_message_text(f"↩️ A tarefa *'{task['activity']}'* foi adiada para *amanhã às {new_start_dt_aware.strftime('%H:%M')}*! Sem problemas, vamos juntos! 💪", parse_mode='Markdown')
-                logger.info(f"Tarefa '{task['activity']}' adiada para o usuário {chat_id}.")
+                await query.edit_message_text(f"↩️ A tarefa *'{found_task['activity']}'* foi adiada para *amanhã às {new_start_dt_aware.strftime('%H:%M')}*! Sem problemas, vamos juntos! 💪", parse_mode='Markdown')
+                logger.info(f"Tarefa '{found_task['activity']}' adiada para o usuário {chat_id}.")
             else:
                 await query.edit_message_text(f"Esta tarefa já foi concluída! Ótimo trabalho! 😉")
         else:
             await query.edit_message_text("🤔 Não encontrei a tarefa para adiar. Ela pode já ter sido concluída ou apagada. Por favor, tente novamente!")
-            logger.warning(f"Não encontrei tarefa com índice {task_idx} para adiar via feedback.")
+            logger.warning(f"Não encontrei tarefa com ID {task_id} para adiar via feedback.")
         context.user_data.pop("expecting", None)
         return
 
-    if cmd.startswith("feedback_delete_"):
+    if cmd.startswith("feedback_delete_id_"):
         try:
-            task_idx = int(cmd.split("_")[2])
-        except (IndexError, ValueError):
-            logger.error(f"Erro ao parsear índice do callback_data: {cmd}")
+            task_id = cmd.split("_id_")[1]
+        except IndexError:
+            logger.error(f"Erro ao parsear ID da tarefa do callback_data: {cmd}")
             await query.edit_message_text("❌ Erro ao identificar a tarefa para apagar. Que pena! 😔")
             return
 
-        # Reutiliza a lógica de apagar tarefa existente
-        update.callback_query.data = f"delete_task_{task_idx}"
-        await delete_task_callback(update, context)
+        # Reutiliza a lógica de apagar tarefa existente (agora baseada em ID)
+        # Cria um update mock para chamar a função delete_task_callback
+        mock_update = Update(update_id=update.update_id, callback_query=query)
+        mock_update.callback_query.data = f"delete_task_id_{task_id}"
+        await delete_task_callback(mock_update, context)
         context.user_data.pop("expecting", None)
         return
 
 async def delete_meta_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler para apagar metas."""
+    """Handler para apagar metas (agora usando ID)."""
     query = update.callback_query
     await query.answer()
 
     chat_id = str(query.message.chat_id)
     db = load_data()
     user_data = db.setdefault(chat_id, {})
-    metas = user_data.setdefault("metas", [])
+    metas = user_data.setdefault("weekly_goals", []) # Corrigido para "weekly_goals"
 
     cmd = query.data
     logger.info(f"Usuário {chat_id} clicou em callback: {cmd}.")
 
-    if cmd.startswith("delete_meta_"):
+    if cmd.startswith("delete_weekly_goal_confirm_id_"): # Mudança para usar ID
         try:
-            idx = int(cmd.split("_")[2])
-        except (IndexError, ValueError):
-            logger.error(f"Erro ao parsear índice do callback_data para apagar meta: {cmd}")
+            meta_id = cmd.split("_id_")[1]
+        except IndexError:
+            logger.error(f"Erro ao parsear ID do callback_data para apagar meta: {cmd}")
             await query.edit_message_text("❌ Erro ao identificar a meta para apagar. Que chato! 😔")
             return
 
-        if 0 <= idx < len(metas):
-            deleted_meta = metas.pop(idx)
+        deleted_meta = None
+        # Encontrar a meta pelo ID
+        for idx, meta in enumerate(metas):
+            if meta.get('id') == meta_id:
+                deleted_meta = metas.pop(idx)
+                break
+
+        if deleted_meta:
             save_data(db)
             await query.edit_message_text(f"🗑️ Meta *'{deleted_meta['description']}'* apagada com sucesso! Uma a menos para se preocupar! 😉", parse_mode='Markdown')
-            logger.info(f"Meta '{deleted_meta['description']}' apagada para o usuário {chat_id}.")
+            logger.info(f"Meta '{deleted_meta['description']}' (ID: {meta_id}) apagada para o usuário {chat_id}.")
+            await view_weekly_goals_command(update, context) # Atualiza a lista de metas
         else:
-            await query.edit_message_text("🤔 Essa meta não existe mais ou o índice está incorreto. Tente listar suas metas novamente!")
-            logger.warning(f"Tentativa de apagar meta com índice inválido {idx} para o usuário {chat_id}.")
+            await query.edit_message_text("🤔 Essa meta não existe mais ou o ID está incorreto. Tente listar suas metas novamente!")
+            logger.warning(f"Tentativa de apagar meta com ID inválido {meta_id} para o usuário {chat_id}.")
         return
 
 async def delete_task_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler para apagar tarefas (não recorrentes)."""
+    """Handler para apagar tarefas (não recorrentes), agora usando ID."""
     query = update.callback_query
     await query.answer()
 
@@ -415,25 +445,30 @@ async def delete_task_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     cmd = query.data
     logger.info(f"Usuário {chat_id} clicou em callback: {cmd}.")
 
-    if cmd.startswith("delete_task_"):
+    if cmd.startswith("delete_task_id_"): # Mudança para usar ID
         try:
-            idx = int(cmd.split("_")[2])
-        except (IndexError, ValueError):
-            logger.error(f"Erro ao parsear índice do callback_data para apagar tarefa: {cmd}")
+            task_id = cmd.split("_id_")[1]
+        except IndexError:
+            logger.error(f"Erro ao parsear ID do callback_data para apagar tarefa: {cmd}")
             await query.edit_message_text("❌ Erro ao identificar a tarefa para apagar. Que pena! 😔")
             return
 
-        if 0 <= idx < len(tarefas):
-            deleted_task = tarefas.pop(idx)
+        deleted_task = None
+        # Encontrar a tarefa pelo ID
+        for idx, task in enumerate(tarefas):
+            if task.get('id') == task_id:
+                deleted_task = tarefas.pop(idx)
+                break
 
+        if deleted_task:
             cancel_task_jobs(chat_id, deleted_task.get("job_names", []), context.job_queue)
 
             save_data(db)
             await query.edit_message_text(f"🗑️ Tarefa *'{deleted_task['activity']}'* apagada com sucesso! Menos uma preocupação! 😉", parse_mode='Markdown')
-            logger.info(f"Tarefa '{deleted_task['activity']}' apagada para o usuário {chat_id}.")
+            logger.info(f"Tarefa '{deleted_task['activity']}' (ID: {task_id}) apagada para o usuário {chat_id}.")
         else:
-            await query.edit_message_text("🤔 Essa tarefa não existe mais ou o índice está incorreto. Tente listar suas tarefas novamente!", parse_mode='Markdown')
-            logger.warning(f"Tentativa de apagar tarefa com índice inválido {idx} para o usuário {chat_id}.")
+            await query.edit_message_text("🤔 Essa tarefa não existe mais ou o ID está incorreto. Tente listar suas tarefas novamente!", parse_mode='Markdown')
+            logger.warning(f"Tentativa de apagar tarefa com ID inválido {task_id} para o usuário {chat_id}.")
         return
 
 # --- Funções de Feedback e Relatórios ---
@@ -456,24 +491,28 @@ async def send_daily_feedback(context: ContextTypes.DEFAULT_TYPE):
 
     for idx, task in enumerate(tarefas):
         try:
-            task_start_dt_naive = datetime.datetime.fromisoformat(task['start_when'])
-            task_start_dt_aware = SAO_PAULO_TZ.localize(task_start_dt_naive)
-            task_date = task_start_dt_aware.date()
+            if task.get('start_when'):
+                task_start_dt_naive = datetime.datetime.fromisoformat(task['start_when'])
+                task_start_dt_aware = SAO_PAULO_TZ.localize(task_start_dt_naive)
+                task_date = task_start_dt_aware.date()
+            else:
+                task_date = None
         except (ValueError, TypeError):
-            # Tarefas sem data ou com data inválida não entram no feedback diário de "hoje"
             logger.warning(f"Data de início inválida para a tarefa: {task.get('activity')}. Pulando no feedback diário.")
-            continue
+            task_date = None
 
-        if task_date == today:
+        # Incluir tarefas sem data de início se não forem recorrentes e não concluídas,
+        # para que possam ser questionadas, ou se forem para hoje
+        if task_date == today or (task_date is None and not task.get('recurring')):
             if task.get('completion_status') in ['completed_on_time', 'completed_manually']:
                 completed_tasks_today.append(task['activity'])
-                daily_score_this_feedback += 10 # Cada tarefa concluída vale 10 pontos
+                daily_score_this_feedback += 10
             elif task.get('completion_status') in ['not_completed', 'not_completed_with_reason', 'postponed']:
                 not_completed_tasks_today.append(task['activity'])
                 if task.get('reason_not_completed'):
                     imprevistos_today.append(f"- *{task['activity']}*: {task['reason_not_completed']}")
-            elif not task.get('done'): # Tarefa para hoje que não foi concluída/adiada e precisa de feedback
-                tasks_to_ask_feedback.append({'activity': task['activity'], 'idx': idx})
+            elif not task.get('done'):
+                tasks_to_ask_feedback.append({'activity': task['activity'], 'id': task['id']}) # Passa o ID
 
     feedback_message = f"✨ Seu Feedback Diário ({today.strftime('%d/%m/%Y')}):\n\n"
 
@@ -498,12 +537,12 @@ async def send_daily_feedback(context: ContextTypes.DEFAULT_TYPE):
     if tasks_to_ask_feedback:
         for task_info in tasks_to_ask_feedback:
             activity = task_info['activity']
-            idx = task_info['idx']
+            task_id = task_info['id'] # Pega o ID
             keyboard = [
-                [InlineKeyboardButton("✅ Sim", callback_data=f"feedback_yes_{idx}"),
-                 InlineKeyboardButton("❌ Não", callback_data=f"feedback_no_{idx}")],
-                [InlineKeyboardButton("↩️ Adiar para amanhã", callback_data=f"feedback_postpone_{idx}"),
-                 InlineKeyboardButton("🗑️ Excluir", callback_data=f"feedback_delete_{idx}")]
+                [InlineKeyboardButton("✅ Sim", callback_data=f"feedback_yes_id_{task_id}"), # Usa ID
+                 InlineKeyboardButton("❌ Não", callback_data=f"feedback_no_id_{task_id}")], # Usa ID
+                [InlineKeyboardButton("↩️ Adiar para amanhã", callback_data=f"feedback_postpone_id_{task_id}"), # Usa ID
+                 InlineKeyboardButton("🗑️ Excluir", callback_data=f"feedback_delete_id_{task_id}")] # Usa ID
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.send_message(
@@ -512,7 +551,7 @@ async def send_daily_feedback(context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
-            logger.info(f"Solicitando feedback para tarefa '{activity}' (índice {idx}) para o usuário {chat_id}.")
+            logger.info(f"Solicitando feedback para tarefa '{activity}' (ID {task_id}) para o usuário {chat_id}.")
 
 async def send_weekly_feedback(context: ContextTypes.DEFAULT_TYPE):
     """Envia o feedback semanal consolidado ao usuário."""
@@ -522,7 +561,6 @@ async def send_weekly_feedback(context: ContextTypes.DEFAULT_TYPE):
     tarefas = user_data.setdefault("tarefas", [])
 
     now_aware = datetime.datetime.now(SAO_PAULO_TZ)
-    # Encontrar o início da semana (Domingo passado)
     start_of_week = now_aware.date() - datetime.timedelta(days=(now_aware.weekday() + 1) % 7)
     end_of_week = start_of_week + datetime.timedelta(days=6)
 
@@ -533,7 +571,6 @@ async def send_weekly_feedback(context: ContextTypes.DEFAULT_TYPE):
 
     daily_productivity = defaultdict(int)
 
-    # Days for graph display: Mon, Tue, ..., Sun
     day_names_abbrev = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
     for task in tarefas:
@@ -543,7 +580,7 @@ async def send_weekly_feedback(context: ContextTypes.DEFAULT_TYPE):
                 task_start_dt_aware = SAO_PAULO_TZ.localize(task_start_dt_naive)
                 task_date = task_start_dt_aware.date()
             else:
-                continue # Pula tarefas sem data de início
+                continue
 
         except (ValueError, TypeError):
             logger.warning(f"Data de início inválida para a tarefa: {task.get('activity')}. Pulando na análise semanal.")
@@ -552,14 +589,12 @@ async def send_weekly_feedback(context: ContextTypes.DEFAULT_TYPE):
         if start_of_week <= task_date <= end_of_week:
             if task.get('completion_status') in ['completed_on_time', 'completed_manually']:
                 total_completed_tasks_week += 1
-                # Adiciona 10 pontos por tarefa concluída para o gráfico de produtividade diária
                 daily_productivity[task_date.weekday()] += 10
             elif task.get('completion_status') == 'postponed':
                 total_postponed_tasks_week += 1
             elif task.get('completion_status') in ['not_completed', 'not_completed_with_reason']:
                 total_not_completed_tasks_week += 1
 
-            # Estimativa de tempo focado das tarefas concluídas
             if task.get('start_when') and task.get('end_when') and task.get('completion_status') in ['completed_on_time', 'completed_manually']:
                 try:
                     start_dt = datetime.datetime.fromisoformat(task['start_when']).astimezone(SAO_PAULO_TZ)
@@ -580,14 +615,12 @@ async def send_weekly_feedback(context: ContextTypes.DEFAULT_TYPE):
     feedback_message += f"⏱️ *Tempo Focado Estimado*: {focused_h_week}h {focused_m_week:02d}min\n\n"
 
     feedback_message += "📈 *Desempenho Diário (Pontos)*:\n"
-    max_score = max(daily_productivity.values()) if daily_productivity else 1 # Evitar divisão por zero
+    max_score = max(daily_productivity.values()) if daily_productivity else 1
     graph_lines = []
 
-    # Garante a ordem correta dos dias da semana (Segunda-feira a Domingo)
     for i in range(7):
         day_abbrev = day_names_abbrev[i]
-        score = daily_productivity.get(i, 0) # Usa o índice do dia da semana (0-6)
-        # Calcula o número de blocos para a barra de progresso (máximo de 10 blocos)
+        score = daily_productivity.get(i, 0)
         num_blocks = int((score / max_score) * 10) if max_score > 0 else 0
         graph_lines.append(f"{day_abbrev}: {'█' * num_blocks}{'░' * (10 - num_blocks)} ({score} pts)")
 
@@ -613,7 +646,6 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     user_data = db.setdefault(chat_id, {})
     tarefas = user_data.setdefault("tarefas", [])
 
-    # Obtém o filtro do callback_data ou do argumento do comando
     filter_type = context.args[0] if context.args else "all"
     if update.callback_query and update.callback_query.data.startswith("list_tasks_"):
         filter_type = update.callback_query.data.replace("list_tasks_", "")
@@ -624,7 +656,7 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     filtered_tasks = []
 
-    for idx, task in enumerate(tarefas):
+    for idx, task in enumerate(tarefas): # Ainda usamos idx aqui para compatibilidade com a exibição, mas actions usam ID
         include_task = False
         task_date = None
 
@@ -635,9 +667,8 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 task_date = task_start_dt_aware.date()
             except (ValueError, TypeError):
                 logger.warning(f"Data de início inválida para a tarefa: {task.get('activity')}. Ignorando data/hora para filtragem.")
-                task_date = None # Anula a data se for inválida
+                task_date = None
 
-        # Lógica de filtragem
         if filter_type == "all":
             include_task = True
         elif filter_type == "today":
@@ -660,23 +691,15 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if include_task:
             filtered_tasks.append((idx, task))
 
-    if not filtered_tasks:
-        message = f"😔 Nenhuma tarefa encontrada para o filtro *'{filter_type.replace('_', ' ').capitalize()}'*.\nQue tal adicionar uma nova?"
-        if update.callback_query:
-            await update.callback_query.answer()
-            await update.callback_query.message.edit_text(message, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(build_task_filter_keyboard()))
-        else:
-            await update.message.reply_text(message, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(build_task_filter_keyboard()))
-        return
-
     tasks_display = []
-    for idx, task in filtered_tasks:
+    for idx_display, task in filtered_tasks:
         activity = task['activity']
         start_when = task.get('start_when')
         end_when = task.get('end_when')
         done = task.get('done', False)
         recurring = task.get('recurring', False)
         priority = task.get('priority', 'Não definida')
+        task_id = task.get('id', 'N/A') # Obtenha o ID
 
         status_icon = "✅" if done else "⏳"
 
@@ -696,21 +719,43 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if priority != 'Não definida':
             task_info += f" _(Prioridade: {priority.capitalize()})_"
 
-        tasks_display.append(f"{idx}. {task_info}")
+        # Adiciona o ID da tarefa para referência, útil para depuração
+        tasks_display.append(f"{idx_display+1}. {task_info} `ID:{task_id}`")
 
     message_header = f"📋 *Suas Tarefas Agendadas ({filter_type.replace('_', ' ').capitalize()})*:\n\n"
-    message_body = "\n".join(tasks_display)
+    message_body = "\n".join(tasks_display) if tasks_display else "😔 Nenhuma tarefa encontrada para este filtro.\nQue tal adicionar uma nova?"
 
-    # Adicionando botão para adicionar nova tarefa
     task_management_keyboard = build_task_filter_keyboard()
     task_management_keyboard.insert(0, [InlineKeyboardButton("➕ Adicionar Nova Tarefa", callback_data="add_new_task_menu")])
+    if filtered_tasks: # Adiciona botões de ação se houver tarefas para agir
+        task_management_keyboard.insert(1, [
+            InlineKeyboardButton("✅ Concluir", callback_data="select_task_to_mark_done"),
+            InlineKeyboardButton("🗑️ Apagar", callback_data="select_task_to_delete")
+        ])
 
     reply_markup = InlineKeyboardMarkup(task_management_keyboard)
 
+    new_text = message_header + message_body
+
     if update.callback_query:
-        await update.callback_query.edit_message_text(message_header + message_body, reply_markup=reply_markup, parse_mode='Markdown')
+        current_message_text = update.callback_query.message.text
+        current_message_markup = update.callback_query.message.reply_markup
+
+        current_buttons = [[b.to_dict() for b in row] for row in current_message_markup.inline_keyboard] if current_message_markup else []
+        new_buttons = [[b.to_dict() for b in row] for row in reply_markup.inline_keyboard] if reply_markup else []
+
+        if current_message_text == new_text and current_buttons == new_buttons:
+            logger.info(f"Mensagem de tarefas para {chat_id} não modificada. Evitando re-edição.")
+            await update.callback_query.answer("A lista de tarefas já está atualizada! 😉")
+            return
+        else:
+            try:
+                await update.callback_query.edit_message_text(new_text, reply_markup=reply_markup, parse_mode='Markdown')
+            except Exception as e: # Captura exceções para evitar travamento
+                logger.error(f"Erro ao editar mensagem de tarefas para {chat_id}: {e}", exc_info=True)
+                await update.callback_query.message.reply_text(new_text, reply_markup=reply_markup, parse_mode='Markdown')
     else:
-        await update.message.reply_text(message_header + message_body, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(new_text, reply_markup=reply_markup, parse_mode='Markdown')
     logger.info(f"Usuário {chat_id} solicitou lista de tarefas com filtro '{filter_type}'.")
 
 def build_task_filter_keyboard():
@@ -731,6 +776,63 @@ async def show_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Comando para exibir as tarefas, chamando a função de listagem."""
     await list_tasks(update, context)
 
+async def select_task_to_mark_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Apresenta uma lista de tarefas pendentes para o usuário marcar como concluída."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+
+    db = load_data()
+    user_data = db.setdefault(chat_id, {})
+    tarefas = user_data.setdefault("tarefas", [])
+
+    pending_tasks = [task for task in tarefas if not task.get("done")]
+
+    if not pending_tasks:
+        await query.edit_message_text("🎉 Todas as suas tarefas estão concluídas! Que maravilha! 😊", parse_mode='Markdown')
+        return
+
+    message_text = "✅ *Qual tarefa você deseja marcar como concluída?*\n\n"
+    keyboard = []
+
+    for idx, task in enumerate(pending_tasks): # Use idx para exibição no botão
+        button_text = f"{idx+1}. {task['activity']}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"mark_done_id_{task['id']}")]) # Passa o ID
+
+    keyboard.append([InlineKeyboardButton("↩️ Voltar", callback_data="list_tasks_all")]) # Volta para a lista de tarefas
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
+    logger.info(f"Usuário {chat_id} acessou o menu para marcar tarefas como concluídas.")
+
+async def select_task_to_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Apresenta uma lista de tarefas para o usuário apagar."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+
+    db = load_data()
+    user_data = db.setdefault(chat_id, {})
+    tarefas = user_data.setdefault("tarefas", [])
+
+    if not tarefas:
+        await query.edit_message_text("😔 Você não tem tarefas para apagar no momento.", parse_mode='Markdown')
+        return
+
+    message_text = "🗑️ *Selecione qual tarefa você deseja apagar:*\n\n"
+    keyboard = []
+
+    for idx, task in enumerate(tarefas): # Use idx para exibição no botão
+        status_icon = "✅" if task.get('done') else "⏳"
+        button_text = f"{idx+1}. {status_icon} {task['activity']}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"delete_task_id_{task['id']}")]) # Passa o ID
+
+    keyboard.append([InlineKeyboardButton("↩️ Voltar", callback_data="list_tasks_all")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
+    logger.info(f"Usuário {chat_id} acessou o menu para apagar tarefas.")
+
 # --- Nova Funcionalidade: Adicionar Tarefa Avulsa ---
 async def add_new_task_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Inicia o fluxo para adicionar uma nova tarefa avulsa."""
@@ -747,8 +849,12 @@ async def add_new_task_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 # --- Funções de Rotina Semanal ---
 async def handle_weekly_routine_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Inicia o processo de definição da rotina semanal pedindo o texto ao usuário."""
+    # Garante que seja update.message.reply_text ou update.callback_query.message.reply_text
+    # Depende de como essa função é chamada (comando /setroutine ou callback)
+    source_message = update.message if update.message else update.callback_query.message
+    
     context.user_data["expecting"] = "weekly_routine_text"
-    await (update.message or update.callback_query.message).reply_text(
+    await source_message.reply_text(
         "📚 Me envie sua rotina semanal completa, dia a dia e com horários, como no exemplo que você me deu! "
         "Vou te ajudar a transformá-la em tarefas agendadas. Capricha nos detalhes! ✨\n\n"
         "Exemplo:\n"
@@ -782,7 +888,6 @@ async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job
     user_data = db.setdefault(chat_id, {})
     tarefas = user_data.setdefault("tarefas", [])
 
-    # Cancelar e remover jobs antigos de tarefas recorrentes antes de processar as novas
     tasks_to_keep = []
     jobs_to_cancel = []
     for task in tarefas:
@@ -792,7 +897,7 @@ async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job
             tasks_to_keep.append(task)
 
     cancel_task_jobs(chat_id, jobs_to_cancel, job_queue)
-    tarefas[:] = tasks_to_keep # Limpa as tarefas recorrentes antigas
+    tarefas[:] = tasks_to_keep
 
     for line in lines:
         line = line.strip()
@@ -836,13 +941,11 @@ async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job
 
                 logger.info(f"    Detectado: Dia={current_day}, Início={start_time_obj.strftime('%H:%M')}, Fim={end_time_obj.strftime('%H:%M') if end_time_obj else 'N/A'}, Atividade='{activity_description}'")
 
-                # Calcula a próxima ocorrência da tarefa (para agendamento inicial)
                 target_date = now_aware.date()
-                while target_date.weekday() != current_day: # Encontra o próximo dia da semana
+                while target_date.weekday() != current_day:
                     target_date += datetime.timedelta(days=1)
 
                 temp_start_dt_naive = datetime.datetime.combine(target_date, start_time_obj)
-                # Se a tarefa já passou no dia da semana atual, agenda para a próxima semana
                 if SAO_PAULO_TZ.localize(temp_start_dt_naive) <= now_aware:
                     target_date += datetime.timedelta(weeks=1)
 
@@ -857,7 +960,7 @@ async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job
                     end_dt_aware = SAO_PAULO_TZ.localize(end_dt_naive)
 
                 new_task_data = {
-                    "id": str(uuid.uuid4()), # ID único para a tarefa recorrente
+                    "id": str(uuid.uuid4()),
                     "activity": activity_description,
                     "done": False,
                     "start_when": start_dt_aware.isoformat(),
@@ -865,24 +968,22 @@ async def parse_and_schedule_weekly_routine(chat_id: str, routine_text: str, job
                     "completion_status": None,
                     "reason_not_completed": None,
                     "recurring": True,
-                    "priority": "media", # Prioridade padrão para rotina
+                    "priority": "media",
                     "job_names": []
                 }
                 tarefas.append(new_task_data)
-                current_task_idx = len(tarefas) - 1
-
-                # Agendar os jobs para esta tarefa recorrente
-                await schedule_single_task_jobs(chat_id, new_task_data, current_task_idx, job_queue)
+                
+                await schedule_single_task_jobs(chat_id, new_task_data, None, job_queue)
 
                 scheduled_tasks_count += 1
-                logger.info(f"    Agendada tarefa recorrente: '{activity_description}' para {start_dt_aware} (índice {current_task_idx}).")
+                logger.info(f"    Agendada tarefa recorrente: '{activity_description}' para {start_dt_aware}.")
 
     save_data(db)
     return scheduled_tasks_count
 
-async def schedule_single_task_jobs(chat_id: str, task_data: dict, task_idx: int, job_queue: JobQueue):
-    """Agenda os jobs (pré-início, início, fim) para uma única tarefa (recorrente ou avulsa)."""
-    # A tarefa pode não ter start_when, então verificamos
+async def schedule_single_task_jobs(chat_id: str, task_data: dict, task_idx: int | None, job_queue: JobQueue):
+    """Agenda os jobs (pré-início, início, fim) para uma única tarefa (recorrente ou avulsa).
+    task_idx é usado APENAS para compatibilidade LEGADO com alerts existentes, mas o task_id é o preferencial."""
     if not task_data.get('start_when'):
         logger.info(f"Tarefa '{task_data.get('activity')}' não tem data/hora de início, não agendando jobs.")
         return
@@ -891,14 +992,13 @@ async def schedule_single_task_jobs(chat_id: str, task_data: dict, task_idx: int
     end_dt_aware = datetime.datetime.fromisoformat(task_data['end_when']).astimezone(SAO_PAULO_TZ) if task_data['end_when'] else None
     activity_description = task_data['activity']
     task_is_recurring = task_data.get('recurring', False)
-    task_unique_id = task_data.get('id', str(uuid.uuid4())) # Usa o ID único se existir, senão gera um
+    task_unique_id = task_data.get('id', str(uuid.uuid4()))
 
     job_names_for_task = []
     now_aware = datetime.datetime.now(SAO_PAULO_TZ)
 
-    # Função auxiliar para agendar jobs
     def create_job(time_to_run, job_type, message_data):
-        job_name = f"task_{job_type}_{chat_id}_{task_unique_id}_{time_to_run.timestamp()}"
+        job_name = f"task_{job_type}_{chat_id}_{task_unique_id}" # Simplificado o nome do job, ID já é único
         if task_is_recurring:
             job_queue.run_daily(
                 send_task_alert,
@@ -920,7 +1020,6 @@ async def schedule_single_task_jobs(chat_id: str, task_data: dict, task_idx: int
             logger.info(f"Job avulso '{job_type}' para '{activity_description}' agendado para {time_to_run.strftime('%d/%m/%Y %H:%M')}.")
         return job_name
 
-    # Alerta de 30 minutos antes (apenas para tarefas no futuro)
     pre_start_time = start_dt_aware - datetime.timedelta(minutes=30)
     if pre_start_time > now_aware:
         job_names_for_task.append(
@@ -931,8 +1030,6 @@ async def schedule_single_task_jobs(chat_id: str, task_data: dict, task_idx: int
             )
         )
 
-    # Alerta de início da tarefa
-    # Agendamos mesmo se for no passado, mas o send_task_alert vai ignorar se a tarefa já foi concluída
     job_names_for_task.append(
         create_job(
             start_dt_aware,
@@ -941,7 +1038,6 @@ async def schedule_single_task_jobs(chat_id: str, task_data: dict, task_idx: int
         )
     )
 
-    # Alerta de fim da tarefa (se houver e for no futuro)
     if end_dt_aware and end_dt_aware > now_aware:
         job_names_for_task.append(
             create_job(
@@ -951,9 +1047,6 @@ async def schedule_single_task_jobs(chat_id: str, task_data: dict, task_idx: int
             )
         )
 
-    # Atualiza a tarefa no dicionário `task_data` com os nomes dos jobs
-    # Isso é importante para poder cancelar os jobs depois
-    # Evita duplicar se já existirem nomes
     if "job_names" not in task_data:
         task_data["job_names"] = []
     task_data["job_names"].extend(job_names_for_task)
@@ -964,27 +1057,25 @@ async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
     data = context.job.data
     description = data['description']
     alert_type = data['alert_type']
-    task_id = data['task_id'] # Usamos o ID único agora
-    original_start_when = data['original_start_when'] # Para validar se a tarefa ainda é a mesma
+    task_id = data['task_id']
+    original_start_when = data['original_start_when']
 
     db = load_data()
     user_data = db.setdefault(str(chat_id), {})
     tarefas = user_data.setdefault("tarefas", [])
 
-    # Encontra a tarefa pelo ID único
     found_task = None
-    found_task_idx = -1
+    found_task_idx = -1 # Ainda para compatibilidade de feedback de botoes antigos
     for idx, task in enumerate(tarefas):
         if task.get('id') == task_id:
             found_task = task
-            found_task_idx = idx
+            found_task_idx = idx # Mantém o índice para os callbacks de botões
             break
 
     if not found_task or found_task.get('activity') != description or found_task.get('start_when') != original_start_when:
         logger.warning(f"Alerta para tarefa '{description}' (ID {task_id}) ignorado. Tarefa não corresponde mais ou foi removida/alterada.")
-        return # Não envia o alerta se a tarefa não for mais válida
+        return
 
-    # Não envia alerta se a tarefa já foi marcada como feita
     if found_task.get('done'):
         logger.info(f"Alerta para tarefa '{description}' (ID {task_id}) ignorado. Tarefa já concluída.")
         return
@@ -996,15 +1087,17 @@ async def send_task_alert(context: ContextTypes.DEFAULT_TYPE):
         message = f"🔔 Preparar para: *{description}*! Começa em 30 minutos! 😉"
     elif alert_type == 'start':
         message = f"🚀 *HORA DE: {description.upper()}!* Vamos com tudo! 💪"
+        # Usamos o ID para os callbacks agora
         keyboard = [
-            [InlineKeyboardButton("✅ Concluída", callback_data=f"feedback_yes_{found_task_idx}"),
-             InlineKeyboardButton("❌ Não Concluída", callback_data=f"feedback_no_{found_task_idx}")]
+            [InlineKeyboardButton("✅ Concluída", callback_data=f"feedback_yes_id_{task_id}"),
+             InlineKeyboardButton("❌ Não Concluída", callback_data=f"feedback_no_id_{task_id}")]
         ]
     elif alert_type == 'end':
         message = f"✅ Tempo para *{description}* acabou! Você conseguiu? 🎉"
+        # Usamos o ID para os callbacks agora
         keyboard = [
-            [InlineKeyboardButton("✅ Sim, concluí!", callback_data=f"feedback_yes_{found_task_idx}"),
-             InlineKeyboardButton("❌ Não concluí", callback_data=f"feedback_no_{found_task_idx}")]
+            [InlineKeyboardButton("✅ Sim, concluí!", callback_data=f"feedback_yes_id_{task_id}"),
+             InlineKeyboardButton("❌ Não concluí", callback_data=f"feedback_no_id_{task_id}")]
         ]
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
@@ -1031,11 +1124,21 @@ async def view_weekly_routine(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not recurring_tasks:
         message = "😔 Você ainda não tem uma rotina semanal definida. Use o menu para adicionar sua rotina! ✨"
+        keyboard = [[InlineKeyboardButton("✏️ Adicionar Rotina Semanal", callback_data="edit_full_weekly_routine")],
+                    [InlineKeyboardButton("↩️ Voltar ao Menu Principal", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         if update.callback_query:
             await update.callback_query.answer()
-            await update.callback_query.message.edit_text(message, parse_mode='Markdown')
+            # Verifica se a mensagem já é a mesma para evitar BadRequest
+            current_message_text = update.callback_query.message.text
+            if current_message_text != message:
+                await update.callback_query.message.edit_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            else:
+                await update.callback_query.answer("A rotina semanal já está vazia ou não definida.")
         else:
-            await update.message.reply_text(message, parse_mode='Markdown')
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        logger.info(f"Usuário {chat_id} visualizou a rotina semanal (vazia).")
         return
 
     for idx, task in recurring_tasks:
@@ -1053,8 +1156,8 @@ async def view_weekly_routine(update: Update, context: ContextTypes.DEFAULT_TYPE
             tasks_by_day[day_of_week].append({
                 "activity": task['activity'],
                 "time": task_time_str,
-                "idx": idx, # Passa o índice original da tarefa para o botão de exclusão
-                "id": task.get("id") # Também o ID único
+                "idx": idx, # Mantém para exibir, mas para ação usa 'id'
+                "id": task.get("id")
             })
         except (ValueError, TypeError):
             logger.warning(f"Tarefa recorrente com data inválida ao exibir rotina: {task.get('activity')}")
@@ -1074,13 +1177,27 @@ async def view_weekly_routine(update: Update, context: ContextTypes.DEFAULT_TYPE
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if update.callback_query:
-        await update.callback_query.edit_message_text(weekly_routine_message, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.callback_query.answer()
+        # Verificar antes de editar
+        current_message_text = update.callback_query.message.text
+        current_message_markup = update.callback_query.message.reply_markup
+
+        current_buttons = [[b.to_dict() for b in row] for row in current_message_markup.inline_keyboard] if current_message_markup else []
+        new_buttons = [[b.to_dict() for b in row] for row in reply_markup.inline_keyboard] if reply_markup else []
+
+        if current_message_text == weekly_routine_message and current_buttons == new_buttons:
+            logger.info(f"Mensagem da rotina semanal para {chat_id} não modificada. Evitando re-edição.")
+            return # Sai da função, já que a mensagem está atualizada
+        else:
+            await update.callback_query.edit_message_text(weekly_routine_message, reply_markup=reply_markup, parse_mode='Markdown')
     else:
         await update.message.reply_text(weekly_routine_message, reply_markup=reply_markup, parse_mode='Markdown')
     logger.info(f"Usuário {chat_id} visualizou a rotina semanal.")
 
 async def show_weekly_routine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando para exibir a rotina semanal."""
+    """Comando ou callback para exibir a rotina semanal."""
+    if update.callback_query:
+        await update.callback_query.answer() # Responde à query para evitar "loading"
     await view_weekly_routine(update, context)
 
 async def edit_full_weekly_routine_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1101,10 +1218,9 @@ async def edit_full_weekly_routine_callback(update: Update, context: ContextType
         else:
             tasks_to_keep.append(task)
 
-    # Cancela todos os jobs associados às tarefas recorrentes
     cancel_task_jobs(chat_id, jobs_to_cancel_for_routine_reset, context.job_queue)
-    tarefas[:] = tasks_to_keep # Limpa a lista de tarefas recorrentes, mantendo as não recorrentes
-    save_data(db) # Salva a remoção das tarefas recorrentes antigas
+    tarefas[:] = tasks_to_keep
+    save_data(db)
 
     context.user_data["expecting"] = "weekly_routine_text"
     await query.edit_message_text(
@@ -1147,7 +1263,6 @@ async def delete_item_weekly_routine_callback(update: Update, context: ContextTy
                 day_name = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}.get(start_dt_aware.weekday())
 
                 button_text = f"[{day_name} {task_time_str}] {task['activity']}"
-                # Usando o ID único da tarefa para o callback de exclusão
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=f"delete_routine_task_by_id_{task.get('id')}")])
             else:
                 button_text = f"[Sem Horário] {task['activity']}"
@@ -1170,7 +1285,7 @@ async def delete_routine_task_confirm_callback(update: Update, context: ContextT
     chat_id = str(query.message.chat_id)
 
     try:
-        task_id_to_delete = query.data.split("_")[4] # Pega o ID após "delete_routine_task_by_id_"
+        task_id_to_delete = query.data.split("_id_")[1] # Pega o ID após "delete_routine_task_by_id_"
     except IndexError:
         logger.error(f"Erro ao parsear ID do callback_data para apagar item da rotina: {query.data}")
         await query.edit_message_text("❌ Erro ao identificar o item da rotina para apagar. Por favor, tente novamente!")
@@ -1181,11 +1296,9 @@ async def delete_routine_task_confirm_callback(update: Update, context: ContextT
     tarefas = user_data.setdefault("tarefas", [])
 
     deleted_task = None
-    task_idx_to_remove = -1
     for idx, task in enumerate(tarefas):
         if task.get("id") == task_id_to_delete and task.get("recurring"):
             deleted_task = tarefas.pop(idx)
-            task_idx_to_remove = idx
             break
 
     if deleted_task:
@@ -1269,7 +1382,19 @@ async def pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
     if update.callback_query:
-        await update.callback_query.edit_message_text(message_text, reply_markup=markup, parse_mode='Markdown')
+        await update.callback_query.answer()
+        # Verificar antes de editar
+        current_message_text = update.callback_query.message.text
+        current_message_markup = update.callback_query.message.reply_markup
+
+        current_buttons = [[b.to_dict() for b in row] for row in current_message_markup.inline_keyboard] if current_message_markup else []
+        new_buttons = [[b.to_dict() for b in row] for row in markup.inline_keyboard] if markup else []
+
+        if current_message_text == message_text and current_buttons == new_buttons:
+            logger.info(f"Mensagem do Pomodoro para {chat_id} não modificada. Evitando re-edição.")
+            return
+        else:
+            await update.callback_query.edit_message_text(message_text, reply_markup=markup, parse_mode='Markdown')
     else:
         await update.message.reply_text(message_text, reply_markup=markup, parse_mode='Markdown')
     logger.info(f"Usuário {chat_id} abriu o menu Pomodoro.")
@@ -1325,7 +1450,6 @@ async def pomodoro_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if current_status.get("job"):
             current_status["job"].schedule_removal()
 
-        # Garante que o tempo da fase atual seja acumulado antes de parar
         if current_status.get("start_time_of_phase") and current_status["state"] not in ["idle", "paused"]:
             elapsed_time_in_phase = (datetime.datetime.now(SAO_PAULO_TZ) - current_status["start_time_of_phase"]).total_seconds()
             if current_status["state"] == "focus":
@@ -1380,7 +1504,7 @@ async def pomodoro_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if update.callback_query:
             await update.callback_query.answer()
             await update.callback_query.message.reply_text(report_message, parse_mode='Markdown')
-            await pomodoro_menu(update, context)
+            await pomodoro_menu(update, context) # Volta ao menu do pomodoro
         else:
             await update.message.reply_text(report_message, parse_mode='Markdown')
 
@@ -1390,7 +1514,7 @@ async def pomodoro_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if update.callback_query:
             await update.callback_query.answer()
             await update.callback_query.message.reply_text(message)
-            await pomodoro_menu(update, context)
+            await pomodoro_menu(update, context) # Volta ao menu do pomodoro
         else:
             await update.message.reply_text(message)
         logger.info(f"Usuário {chat_id} tentou parar Pomodoro, mas nenhum estava ativo.")
@@ -1465,8 +1589,8 @@ async def pomodoro_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             remaining_time_seconds = current_status["paused_remaining_time"]
             inferred_timer_type = current_status.get("previous_timer_type", "focus")
 
-            if remaining_time_seconds < 5: # Se o tempo restante for muito pequeno, avança
-                await handle_pomodoro_end_callback(context)
+            if remaining_time_seconds < 5:
+                await handle_pomodoro_end_callback(context) # Chama diretamente o fim
                 await query.edit_message_text("⌛ Tempo muito baixo para retomar, avançando para o próximo ciclo!", parse_mode='Markdown')
                 logger.info(f"Usuário {chat_id} tentou retomar Pomodoro com tempo mínimo. Avançando para o próximo ciclo.")
                 return
@@ -1474,7 +1598,6 @@ async def pomodoro_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             pomodoro_status_map[chat_id]["start_time_of_phase"] = datetime.datetime.now(SAO_PAULO_TZ)
             pomodoro_status_map[chat_id]["state"] = inferred_timer_type
 
-            # Importante: para retomar, o `duration_minutes` deve ser o tempo restante em minutos (não segundos)
             await start_pomodoro_timer(chat_id, inferred_timer_type, remaining_time_seconds / 60, context.job_queue, is_resume=True)
             await query.edit_message_text(f"▶️ Pomodoro retomado! Foco e energia total! 💪", parse_mode='Markdown')
             logger.info(f"Usuário {chat_id} retomou o Pomodoro com {remaining_time_seconds} segundos restantes (tipo: {inferred_timer_type}).")
@@ -1524,10 +1647,8 @@ async def start_pomodoro_timer(chat_id: str, timer_type: str, duration_minutes: 
     """Inicia o timer de Pomodoro para a fase e duração especificadas."""
     duration_seconds = int(duration_minutes * 60)
 
-    # Verifica se a duração é zero ou negativa (pode acontecer em caso de erro de cálculo de tempo restante)
     if duration_seconds <= 0:
-        logger.warning(f"Duração inválida ({duration_seconds}s) para o timer Pomodoro '{timer_type}' no chat {chat_id}. Não agendando.")
-        # Simula o fim do timer imediatamente
+        logger.warning(f"Duração inválida ({duration_seconds}s) para o timer Pomodoro '{timer_type}' no chat {chat_id}. Não agendando. Simula fim.")
         job_context = type('obj', (object,), {'job': type('obj', (object,), {'chat_id' : int(chat_id), 'data': {"timer_type": timer_type}})()})()
         asyncio.create_task(handle_pomodoro_end_callback(job_context))
         return
@@ -1542,7 +1663,7 @@ async def start_pomodoro_timer(chat_id: str, timer_type: str, duration_minutes: 
         duration_seconds,
         chat_id=int(chat_id),
         data={"timer_type": timer_type, "chat_id": chat_id},
-        name=f"pomodoro_{chat_id}_{timer_type}_{datetime.datetime.now().timestamp()}"
+        name=f"pomodoro_timer_{chat_id}_{timer_type}_{datetime.datetime.now().timestamp()}" # Nome único
     )
 
     pomodoro_status_map[chat_id]["job"] = job
@@ -1564,7 +1685,10 @@ async def handle_pomodoro_end_callback(context: ContextTypes.DEFAULT_TYPE) -> No
         logger.warning(f"Pomodoro terminou para {chat_id} mas estado já é 'idle'. Ignorando.")
         return
 
-    # Acumula o tempo da fase que acabou
+    if current_status["state"] == "paused":
+        logger.warning(f"Pomodoro para {chat_id} estava pausado e terminou. Ignorando a transição de estado automática.")
+        return
+
     if current_status.get("start_time_of_phase"):
         elapsed_time_in_phase = (datetime.datetime.now(SAO_PAULO_TZ) - current_status["start_time_of_phase"]).total_seconds()
         if timer_type == "focus":
@@ -1574,7 +1698,6 @@ async def handle_pomodoro_end_callback(context: ContextTypes.DEFAULT_TYPE) -> No
         elif timer_type == "long_break":
             current_status["long_break_time_total"] += elapsed_time_in_phase
 
-    # Prepara para a próxima fase
     current_status["start_time_of_phase"] = datetime.datetime.now(SAO_PAULO_TZ)
 
     message = ""
@@ -1635,9 +1758,16 @@ async def set_weekly_goal_command(update: Update, context: ContextTypes.DEFAULT_
     """Comando para iniciar a definição de uma meta semanal."""
     chat_id = str(update.effective_chat.id)
     context.user_data["expecting"] = "set_weekly_goal_description"
-    await (update.message or update.callback_query.message).reply_text(
-        "🎯 Qual meta semanal você quer definir? Pode ser '10 Pomodoros de Foco', 'Concluir 5 tarefas importantes', etc. Seja específico! ✨"
-    )
+    # Decide se é para editar a mensagem existente ou enviar uma nova
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.edit_text(
+            "🎯 Qual meta semanal você quer definir? Pode ser '10 Pomodoros de Foco', 'Concluir 5 tarefas importantes', etc. Seja específico! ✨"
+        )
+    else:
+        await update.message.reply_text(
+            "🎯 Qual meta semanal você quer definir? Pode ser '10 Pomodoros de Foco', 'Concluir 5 tarefas importantes', etc. Seja específico! ✨"
+        )
     logger.info(f"Usuário {chat_id} iniciou a definição de uma meta semanal.")
 
 async def handle_set_weekly_goal_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1645,11 +1775,16 @@ async def handle_set_weekly_goal_description(update: Update, context: ContextTyp
     chat_id = str(update.effective_chat.id)
     goal_description = update.message.text.strip()
 
+    if not goal_description:
+        await update.message.reply_text("Ops! A descrição da meta não pode ser vazia. Por favor, digite sua meta novamente.")
+        return
+
     db = load_data()
     user_data = db.setdefault(chat_id, {})
     weekly_goals = user_data.setdefault("weekly_goals", [])
 
     new_goal = {
+        "id": str(uuid.uuid4()), # ID único para a meta
         "description": goal_description,
         "set_date": datetime.datetime.now(SAO_PAULO_TZ).isoformat(),
         "status": "active",
@@ -1688,33 +1823,114 @@ async def view_weekly_goals_command(update: Update, context: ContextTypes.DEFAUL
             status = goal['status']
             progress = goal['progress']
             target = goal['target_value']
+            goal_id = goal.get('id', 'N/A') # Pega o ID da meta
 
             status_icon = "✅" if status == "completed" else "⏳" if status == "active" else "❌"
             progress_text = f"Progresso: {progress}%"
             if target:
                 progress_text = f"Meta: {target} (Progresso: {progress}%)"
 
-            message += f"{idx+1}. {status_icon} *{description}*\n   _{progress_text} - Status: {status.capitalize()}_\n\n"
+            message += f"{idx+1}. {status_icon} *{description}*\n   _{progress_text} - Status: {status.capitalize()}_ `ID:{goal_id}`\n\n"
 
         message += "Use o menu para gerenciar suas metas."
 
     keyboard = [
         [InlineKeyboardButton("➕ Definir Nova Meta", callback_data="set_weekly_goal_command_cb")],
+        [InlineKeyboardButton("✅ Marcar Meta Concluída", callback_data="select_goal_to_mark_done")], # Novo botão
         [InlineKeyboardButton("🗑️ Excluir Meta", callback_data="delete_weekly_goal_menu")],
         [InlineKeyboardButton("↩️ Voltar ao Menu Principal", callback_data="main_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    new_text = message
+
     if update.callback_query:
-        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.callback_query.answer()
+        current_message_text = update.callback_query.message.text
+        current_message_markup = update.callback_query.message.reply_markup
+
+        current_buttons = [[b.to_dict() for b in row] for row in current_message_markup.inline_keyboard] if current_message_markup else []
+        new_buttons = [[b.to_dict() for b in row] for row in reply_markup.inline_keyboard] if reply_markup else []
+
+        if current_message_text == new_text and current_buttons == new_buttons:
+            logger.info(f"Mensagem de metas para {chat_id} não modificada. Evitando re-edição.")
+            return
+        else:
+            await update.callback_query.edit_message_text(new_text, reply_markup=reply_markup, parse_mode='Markdown')
     else:
-        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(new_text, reply_markup=reply_markup, parse_mode='Markdown')
     logger.info(f"Usuário {chat_id} visualizou as metas semanais.")
 
 async def set_weekly_goal_command_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Callback para iniciar a definição de meta a partir de um botão."""
     await update.callback_query.answer()
     await set_weekly_goal_command(update, context)
+
+async def select_goal_to_mark_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Apresenta uma lista de metas ativas para o usuário marcar como concluída."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+
+    db = load_data()
+    user_data = db.setdefault(chat_id, {})
+    weekly_goals = user_data.setdefault("weekly_goals", [])
+
+    active_goals = [goal for goal in weekly_goals if goal.get("status") == "active"]
+
+    if not active_goals:
+        await query.edit_message_text("🎉 Todas as suas metas ativas já foram concluídas ou não há metas! 😊", parse_mode='Markdown')
+        return
+
+    message_text = "✅ *Qual meta você deseja marcar como concluída?*\n\n"
+    keyboard = []
+
+    for idx, goal in enumerate(active_goals):
+        button_text = f"{idx+1}. {goal['description']}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"mark_goal_done_id_{goal['id']}")]) # Passa o ID
+
+    keyboard.append([InlineKeyboardButton("↩️ Voltar", callback_data="view_weekly_goals_command")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
+    logger.info(f"Usuário {chat_id} acessou o menu para marcar metas como concluídas.")
+
+async def mark_goal_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Marca uma meta específica como concluída (usando ID)."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+
+    try:
+        goal_id_to_mark = query.data.split("_id_")[1] # Pega o ID
+    except IndexError:
+        logger.error(f"Erro ao parsear ID do callback_data para marcar meta: {query.data}")
+        await query.edit_message_text("❌ Erro ao identificar a meta para marcar como concluída. Por favor, tente novamente!")
+        return
+
+    db = load_data()
+    user_data = db.setdefault(chat_id, {})
+    weekly_goals = user_data.setdefault("weekly_goals", [])
+
+    found_goal = None
+    for goal in weekly_goals:
+        if goal.get('id') == goal_id_to_mark:
+            found_goal = goal
+            break
+
+    if found_goal:
+        if found_goal.get('status') == 'active':
+            found_goal['status'] = 'completed'
+            found_goal['progress'] = 100 # Assume 100% ao marcar manualmente
+            save_data(db)
+            await query.edit_message_text(f"✅ Meta *'{found_goal['description']}'* marcada como concluída! Parabéns, você é incrível! 🎉", parse_mode='Markdown')
+            logger.info(f"Meta '{found_goal['description']}' (ID: {goal_id_to_mark}) marcada como concluída para o usuário {chat_id}.")
+            await view_weekly_goals_command(update, context) # Atualiza a lista de metas
+        else:
+            await query.edit_message_text(f"Esta meta já foi concluída ou não está ativa! 😉")
+    else:
+        await query.edit_message_text("🤔 Não encontrei essa meta para marcar como concluída. Ela pode já ter sido apagada ou não existe.")
+        logger.warning(f"Tentativa de marcar meta com ID inválido {goal_id_to_mark} para o usuário {chat_id}.")
 
 async def delete_weekly_goal_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Apresenta uma lista de metas semanais para o usuário apagar."""
@@ -1735,7 +1951,7 @@ async def delete_weekly_goal_menu(update: Update, context: ContextTypes.DEFAULT_
 
     for idx, goal in enumerate(weekly_goals):
         button_text = f"{idx+1}. {goal['description']}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"delete_weekly_goal_confirm_{idx}")])
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"delete_weekly_goal_confirm_id_{goal['id']}")]) # Passa o ID
 
     keyboard.append([InlineKeyboardButton("↩️ Voltar", callback_data="view_weekly_goals_command")])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1743,40 +1959,21 @@ async def delete_weekly_goal_menu(update: Update, context: ContextTypes.DEFAULT_
     await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
     logger.info(f"Usuário {chat_id} acessou o menu para apagar metas semanais.")
 
-async def delete_weekly_goal_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Confirma e apaga uma meta semanal específica."""
-    query = update.callback_query
-    await query.answer()
-    chat_id = str(query.message.chat_id)
-
-    try:
-        idx_to_delete = int(query.data.split("_")[4])
-    except (IndexError, ValueError):
-        logger.error(f"Erro ao parsear índice do callback_data para apagar meta: {query.data}")
-        await query.edit_message_text("❌ Erro ao identificar a meta para apagar. Por favor, tente novamente!")
-        return
-
-    db = load_data()
-    user_data = db.setdefault(chat_id, {})
-    weekly_goals = user_data.setdefault("weekly_goals", [])
-
-    if 0 <= idx_to_delete < len(weekly_goals):
-        deleted_goal = weekly_goals.pop(idx_to_delete)
-        save_data(db)
-        await query.edit_message_text(f"🗑️ A meta *'{deleted_goal['description']}'* foi apagada com sucesso! 😉", parse_mode='Markdown')
-        logger.info(f"Meta '{deleted_goal['description']}' (idx {idx_to_delete}) apagada para o usuário {chat_id}.")
-        await view_weekly_goals_command(update, context)
-    else:
-        await query.edit_message_text("🤔 Não encontrei essa meta. Ela pode já ter sido apagada.", parse_mode='Markdown')
-        logger.warning(f"Tentativa de apagar meta com índice inválido {idx_to_delete} para o usuário {chat_id}.")
+# NOTE: A função `delete_meta_callback` foi renomeada para `delete_weekly_goal_confirm_callback`
+# para refletir a mudança no `callback_data` e no escopo de "metas semanais".
+# Verifique se o handler está registrando esta função com o padrão correto.
 
 # --- Funções de Menu Principal e Relatórios ---
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Inicia a conversa e exibe o menu principal."""
+    await main_menu(update, context)
+
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Exibe o menu principal do bot."""
     keyboard = [
         [InlineKeyboardButton("📋 Minhas Tarefas", callback_data="list_tasks_all")],
         [InlineKeyboardButton("⏰ Pomodoro", callback_data="menu_pomodoro")],
-        [InlineKeyboardButton("📚 Rotina Semanal", callback_data="show_weekly_routine_command")],
+        [InlineKeyboardButton("📚 Rotina Semanal", callback_data="show_weekly_routine_command")], # Callback Data ajustado
         [InlineKeyboardButton("🎯 Minhas Metas", callback_data="view_weekly_goals_command")],
         [InlineKeyboardButton("📊 Relatórios", callback_data="show_reports_menu")],
     ]
@@ -1784,7 +1981,19 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message_text = "Olá! Como posso te ajudar hoje a ser mais produtivo? 😊"
 
     if update.callback_query:
-        await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.callback_query.answer() # Importante para callbacks
+        # Compara texto e markup antes de editar
+        current_message_text = update.callback_query.message.text
+        current_message_markup = update.callback_query.message.reply_markup
+
+        current_buttons = [[b.to_dict() for b in row] for row in current_message_markup.inline_keyboard] if current_message_markup else []
+        new_buttons = [[b.to_dict() for b in row] for row in reply_markup.inline_keyboard] if reply_markup else []
+
+        if current_message_text == message_text and current_buttons == new_buttons:
+            logger.info(f"Mensagem do menu principal para {update.effective_chat.id} não modificada. Evitando re-edição.")
+            return
+        else:
+            await update.callback_query.message.edit_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
     else:
         await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='Markdown')
 
@@ -1803,14 +2012,33 @@ async def show_reports_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def get_daily_feedback_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Callback para gerar e enviar o feedback diário manualmente."""
     await update.callback_query.answer("Gerando relatório diário...")
-    # Mock do job object para que send_daily_feedback possa usar context.job.chat_id
     context.job = type('obj', (object,), {'chat_id' : update.effective_chat.id})()
     await send_daily_feedback(context)
 
 async def get_weekly_feedback_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Callback para gerar e enviar o feedback semanal manualmente."""
     await update.callback_query.answer("Gerando relatório semanal...")
-    # Mock do job object
     context.job = type('obj', (object,), {'chat_id' : update.effective_chat.id})()
     await send_weekly_feedback(context)
 
+async def post_init(application: Application):
+    """Executado após a inicialização do bot para carregar dados e re-agendar jobs."""
+    logger.info("Função post_init sendo executada.")
+    db = load_data()
+    for chat_id_str, user_data in db.items():
+        chat_id = int(chat_id_str)
+        tarefas = user_data.get("tarefas", [])
+        
+        # Re-agenda tarefas recorrentes e avulsas (se tiverem data/hora futura e não estiverem concluídas)
+        for task in tarefas:
+            if not task.get('done') and task.get('start_when'):
+                try:
+                    start_dt_aware = datetime.datetime.fromisoformat(task['start_when']).astimezone(SAO_PAULO_TZ)
+                    if task.get('recurring') or start_dt_aware > datetime.datetime.now(SAO_PAULO_TZ):
+                        # Importante: o job_names na tarefa deve ser limpo antes de reagendar para evitar duplicatas
+                        # e ser populado pela função schedule_single_task_jobs
+                        task["job_names"] = [] 
+                        await schedule_single_task_jobs(chat_id_str, task, None, application.job_queue)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Erro ao re-agendar tarefa '{task.get('activity')}' para {chat_id_str}: {e}")
+    logger.info("Re-agendamento de jobs concluído durante post_init.")
