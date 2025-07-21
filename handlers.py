@@ -9,6 +9,44 @@ import asyncio
 import logging
 import uuid # Para gerar IDs únicos para tarefas
 
+async def delete_weekly_goal_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Lida com a confirmação de exclusão de uma meta semanal.
+    Esta função é chamada quando o usuário clica em um botão de confirmação de exclusão de meta.
+    """
+    query = update.callback_query
+    await query.answer() # Importante: sempre responda à query de callback
+
+    # O formato esperado do callback_data é "delete_weekly_goal_confirm_ID_DA_META"
+    # Por exemplo: "delete_weekly_goal_confirm_123"
+    try:
+        goal_id_str = query.data.split('_')[-1] # Pega o último elemento após o split
+        goal_id = int(goal_id_str)
+
+        # --- Adicione sua lógica de exclusão da meta aqui ---
+        # Por exemplo: chamar uma função do seu módulo de banco de dados para excluir a meta
+        # if db_utils.delete_weekly_goal(goal_id): # Exemplo de função de exclusão
+        #     await query.edit_message_text(f"Meta semanal com ID **{goal_id}** foi excluída com sucesso!")
+        # else:
+        #     await query.edit_message_text(f"Erro ao excluir a meta semanal com ID **{goal_id}**.")
+        # --- Fim da lógica de exclusão ---
+
+        await query.edit_message_text(f"Meta semanal com ID **{goal_id}** confirmada para exclusão (Lógica a ser implementada).")
+
+        # Opcional: Voltar para o menu de metas ou para o menu principal
+        keyboard = [
+            [InlineKeyboardButton("Ver Metas Semanais", callback_data="view_weekly_goals_command")],
+            [InlineKeyboardButton("Menu Principal", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.reply_text("O que você gostaria de fazer agora?", reply_markup=reply_markup)
+
+    except (ValueError, IndexError):
+        # Certifique-se de que 'logger' esteja definido no seu handlers.py para registrar erros.
+        # Caso contrário, remova a linha abaixo ou defina logger primeiro.
+        # logger.error(f"Erro ao processar delete_weekly_goal_confirm_callback: {query.data}")
+        await query.edit_message_text("Não foi possível identificar a meta para exclusão. Tente novamente.")
+
 # Configuração de logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
