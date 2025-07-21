@@ -13,7 +13,7 @@ from telegram.ext import (
 from handlers.pomodoro import Pomodoro # Importa a classe Pomodoro
 
 # --- 1. Seu Token do Bot ---
-TOKEN = "SEU_NOVO_TOKEN_AQUI_OBTIDO_DO_BOTFATHER" # <-- ATUALIZE ESTE TOKEN!
+TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" # <-- ATUALIZE ESTE TOKEN!
 
 # Dicionário para armazenar uma instância de Pomodoro para cada usuário
 # Isso garante que cada usuário tenha suas próprias configurações e estado do Pomodoro.
