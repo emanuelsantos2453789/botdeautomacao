@@ -3,7 +3,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 # --- 1. Seu Token do Bot ---
 # Você consegue esse token com o BotFather no Telegram.
 # Substitua "SEU_TOKEN_AQUI" pelo token real do seu bot.
-TOKEN = "BOT_TOKEN"
+TOKEN = "TEL_BOT"
 
 # --- 2. Funções para lidar com Comandos e Mensagens ---
 
