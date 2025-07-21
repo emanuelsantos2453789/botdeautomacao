@@ -1,6 +1,6 @@
 # main.py
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from pomodoro_manager import Pomodoro # Importa a classe Pomodoro
+from pomodoro import Pomodoro # Importa a classe Pomodoro
 
 # --- 1. Seu Token do Bot ---
 TOKEN = "8025423173:AAE4cXH3_UVQEigT64VWZfloN9IiJD-yVMY"
