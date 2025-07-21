@@ -7,3 +7,5 @@ reportlab
 pandas
 dateparser
 pytz
+aiofiles 
+anyio
