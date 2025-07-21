@@ -8,12 +8,13 @@ from telegram.ext import (
     MessageHandler,
     filters,
     ConversationHandler,
-    ContextTypes, # Importar ContextTypes
+    ContextTypes,
 )
 
 class Pomodoro:
     # --- Estados da Conversa para o Pomodoro ---
     # Estes estados são específicos para a conversa do Pomodoro
+    # Usamos constantes de classe para evitar duplicidade
     POMODORO_MENU_STATE = 0
     CONFIG_MENU_STATE = 1
     SET_FOCUS_TIME_STATE = 2
@@ -112,7 +113,6 @@ class Pomodoro:
 
         if self.estado != "ocioso":
             # Usamos lambda e asyncio.run_coroutine_threadsafe para agendar a corrotina no loop de eventos do bot
-            # Importante: context.application.loop deve ser usado para obter o loop de eventos correto
             self._timer_thread = threading.Thread(target=lambda: asyncio.run_coroutine_threadsafe(self._rodar_temporizador(), self.bot.loop))
             self._timer_thread.start()
 
@@ -276,7 +276,7 @@ class Pomodoro:
     async def _show_pomodoro_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Mostra o menu do Pomodoro."""
         query = update.callback_query
-        await query.answer()
+        # await query.answer() # Já é respondido pelo open_pomodoro_menu no main.py, pode ser removido aqui
         await query.edit_message_text(
             "Bem-vindo ao Pomodoro! Escolha uma ação:",
             reply_markup=self._get_pomodoro_menu_keyboard()
@@ -377,24 +377,32 @@ class Pomodoro:
         
         return self.CONFIG_MENU_STATE
 
-    async def _cancel_pomodoro_conversation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Cancela a conversa Pomodoro e retorna ao menu principal do bot (a ser definido no main.py)."""
+    async def _exit_pomodoro_conversation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Este handler é acionado pelo botão 'Voltar ao Início' dentro do menu Pomodoro.
+        Ele sinaliza ao ConversationHandler pai que a sub-conversa do Pomodoro terminou.
+        """
         query = update.callback_query
-        if query:
-            await query.answer()
-            await query.edit_message_text("Saindo do menu Pomodoro. De volta ao início!")
-        else:
-            await update.message.reply_text("Saindo do menu Pomodoro. De volta ao início!")
+        await query.answer()
+        # Não edita a mensagem aqui, pois o handler no main.py fará isso
+        # ou retornará ao menu principal.
         
-        # Notifica o ConversationHandler que esta parte da conversa terminou.
-        # O retorno é `ConversationHandler.END` para este handler específico.
+        # O retorno é ConversationHandler.END para este ConversationHandler aninhado,
+        # sinalizando que a conversa do Pomodoro terminou.
         return ConversationHandler.END 
 
     # --- Método para Obter o ConversationHandler do Pomodoro ---
 
     def get_pomodoro_conversation_handler(self):
+        """
+        Retorna o ConversationHandler completo para a funcionalidade Pomodoro.
+        Este handler será aninhado no ConversationHandler principal do bot.
+        """
         return ConversationHandler(
-            entry_points=[CallbackQueryHandler(self._show_pomodoro_menu, pattern="^pomodoro_menu$")],
+            # O entry_point para este ConversationHandler aninhado é o clique no botão "Pomodoro"
+            # do menu principal. O 'open_pomodoro_menu' em main.py direciona para cá.
+            # Adicionamos per_message=False para suprimir o aviso PTBUserWarning.
+            entry_points=[CallbackQueryHandler(self._show_pomodoro_menu, pattern="^open_pomodoro_menu$", per_message=False)],
             states={
                 self.POMODORO_MENU_STATE: [
                     CallbackQueryHandler(self._pomodoro_iniciar_callback, pattern="^pomodoro_iniciar$"),
@@ -402,7 +410,7 @@ class Pomodoro:
                     CallbackQueryHandler(self._pomodoro_parar_callback, pattern="^pomodoro_parar$"),
                     CallbackQueryHandler(self._pomodoro_status_callback, pattern="^pomodoro_status$"),
                     CallbackQueryHandler(self._show_config_menu, pattern="^pomodoro_configurar$"),
-                    CallbackQueryHandler(self._cancel_pomodoro_conversation, pattern="^main_menu_return$"), # Botão de voltar ao menu principal do bot
+                    CallbackQueryHandler(self._exit_pomodoro_conversation, pattern="^main_menu_return$"), # Sair desta conversa
                 ],
                 self.CONFIG_MENU_STATE: [
                     CallbackQueryHandler(self._request_config_value, pattern="^config_foco$"),
@@ -417,18 +425,19 @@ class Pomodoro:
                 self.SET_CYCLES_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self._set_config_value)],
             },
             fallbacks=[
-                # Um fallback global para mensagens inesperadas dentro do fluxo do pomodoro
-                # Ou para comandos /cancelar, se você quiser manter um fallback de comando.
-                # Para seu pedido de "apenas menus", vamos tentar guiar o usuário.
-                MessageHandler(filters.TEXT & ~filters.COMMAND, self._fallback_pomodoro_message),
-                # Você pode adicionar um CommandHandler("cancelar", self._cancel_pomodoro_conversation) aqui
-                # se quiser que /cancelar funcione dentro do fluxo do pomodoro.
+                MessageHandler(filters.ALL, self._fallback_pomodoro_message),
             ],
+            # map_to_parent define o que acontece no ConversationHandler pai quando este ConversationHandler aninhado termina.
+            # Aqui, quando _exit_pomodoro_conversation retorna ConversationHandler.END, o pai (main.py)
+            # retornará ao MAIN_MENU_STATE.
             map_to_parent={
-                ConversationHandler.END: self.POMODORO_MENU_STATE # Mapeia o fim desta sub-conversa para um estado pai (se houver)
-                                                                # No nosso caso, queremos que o `main.py` decida o que fazer
-                                                                # Normalmente, `ConversationHandler.END` sinaliza que a conversa terminou.
-            }
+                ConversationHandler.END: self.POMODORO_MENU_STATE, # Use um estado que faça sentido no MAIN_MENU_STATE para reentrar
+            },
+            # per_user=True é o padrão e é o que queremos aqui.
+            # per_chat=True, per_message=True são padrões para MessageHandler e CommandHandler,
+            # mas CallbackQueryHandler tem per_message=False por padrão.
+            # AVISO: A linha 396 do erro se refere ao CallbackQueryHandler no entry_points.
+            # Adicionar `per_message=False` ao CallbackQueryHandler do entry_points pode remover o aviso.
         )
 
     async def _fallback_pomodoro_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -440,4 +449,9 @@ class Pomodoro:
             )
         elif update.callback_query:
             await update.callback_query.answer("Ação inválida para este momento.")
+            # Opcional: tentar editar a mensagem do callback_query para mostrar o menu do Pomodoro
+            await update.callback_query.edit_message_text(
+                "Ação inválida. Escolha uma opção:",
+                reply_markup=self._get_pomodoro_menu_keyboard()
+            )
         return self.POMODORO_MENU_STATE # Tenta retornar ao menu Pomodoro
