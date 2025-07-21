@@ -1,120 +1,121 @@
 # main.py
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, ContextTypes
+
 from handlers.pomodoro import Pomodoro # Importa a classe Pomodoro
 
 # --- 1. Seu Token do Bot ---
-TOKEN = "8025423173:AAE4cXH3_UVQEigT64VWZfloN9IiJD-yVMY"
+TOKEN = "8025423173:AAE4cX3_UVQEigT64VWZfloN9IiJD-yVMY"
 
 # Dicionário para armazenar uma instância de Pomodoro para cada usuário
-# A chave será o user_id do Telegram
 user_pomodoros = {}
 
-# --- 2. Funções para lidar com Comandos de Pomodoro ---
+# --- Estados da Conversa Global (se houver mais módulos no futuro) ---
+# Por enquanto, apenas o estado inicial para o menu principal
+MAIN_MENU_STATE = 0
 
-async def get_or_create_pomodoro(update, context):
-    """
-    Função auxiliar para obter a instância do Pomodoro para o usuário,
-    ou criar uma nova se não existir.
-    """
+
+# --- Funções Auxiliares para o Bot Principal ---
+
+def get_main_menu_keyboard():
+    """Retorna o teclado do menu principal."""
+    keyboard = [
+        [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
+        # Adicione outros botões de menu principal aqui, se tiver
+        # Ex: [InlineKeyboardButton("📝 Tarefas", callback_data="open_tasks_menu")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Responde ao comando /start e mostra o menu principal."""
+    await update.message.reply_text(
+        "Olá! Eu sou seu bot de produtividade. Escolha uma opção:",
+        reply_markup=get_main_menu_keyboard()
+    )
+    return MAIN_MENU_STATE # Inicia a conversa no estado do menu principal
+
+async def open_pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Abre o menu Pomodoro a partir do menu principal."""
+    query = update.callback_query
+    await query.answer()
+
     user_id = update.effective_user.id
     if user_id not in user_pomodoros:
-        # Passa o objeto bot e o chat_id para a instância Pomodoro
+        # Cria uma instância de Pomodoro para o usuário, passando o bot e o chat_id
         user_pomodoros[user_id] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
-    return user_pomodoros[user_id]
-
-async def iniciar_pomodoro(update, context):
-    """Responde ao comando /iniciar."""
-    pomodoro = await get_or_create_pomodoro(update, context)
-    response = await pomodoro.iniciar()
-    await update.message.reply_text(response)
-
-async def pausar_pomodoro(update, context):
-    """Responde ao comando /pausar."""
-    pomodoro = await get_or_create_pomodoro(update, context)
-    response = await pomodoro.pausar()
-    await update.message.reply_text(response)
-
-async def parar_pomodoro(update, context):
-    """Responde ao comando /parar."""
-    pomodoro = await get_or_create_pomodoro(update, context)
-    response = await pomodoro.parar()
-    await update.message.reply_text(response, parse_mode='Markdown') # Use Markdown para o relatório formatado
-
-async def status_pomodoro(update, context):
-    """Responde ao comando /status."""
-    pomodoro = await get_or_create_pomodoro(update, context)
-    response = pomodoro.status() # Não é await porque não faz chamadas assíncronas internas
-    await update.message.reply_text(response)
-
-async def configurar_pomodoro(update, context):
-    """Responde ao comando /configurar e define os tempos do Pomodoro."""
-    pomodoro = await get_or_create_pomodoro(update, context)
     
-    args = context.args # Lista de argumentos passados após o comando
+    # Chama o método que mostra o menu do Pomodoro
+    return await user_pomodoros[user_id]._show_pomodoro_menu(update, context)
 
-    if not args or len(args) % 2 != 0:
+
+async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Retorna ao menu principal do bot."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "De volta ao menu principal. Escolha uma opção:",
+        reply_markup=get_main_menu_keyboard()
+    )
+    return MAIN_MENU_STATE
+
+
+async def fallback_global(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler de fallback global para mensagens não esperadas."""
+    if update.message:
         await update.message.reply_text(
-            "Uso: /configurar foco <min> pausa_curta <min> pausa_longa <min> ciclos <num>\n"
-            "Ex: /configurar foco 30 pausa_curta 7 ciclos 3"
+            "Desculpe, não entendi. Por favor, use os botões ou o comando /start.",
+            reply_markup=get_main_menu_keyboard()
         )
-        return
+    elif update.callback_query:
+        await update.callback_query.answer("Ação inválida. Por favor, use os botões.")
+        # Opcional: tentar editar a mensagem do callback_query para mostrar o menu principal
+        # await update.callback_query.edit_message_text(
+        #     "Ação inválida. Escolha uma opção:",
+        #     reply_markup=get_main_menu_keyboard()
+        # )
+    return MAIN_MENU_STATE
 
-    foco, pausa_curta, pausa_longa, ciclos_longa = None, None, None, None
-    try:
-        for i in range(0, len(args), 2):
-            key = args[i]
-            value = int(args[i+1])
-            if key == "foco":
-                foco = value
-            elif key == "pausa_curta":
-                pausa_curta = value
-            elif key == "pausa_longa":
-                pausa_longa = value
-            elif key == "ciclos":
-                ciclos_longa = value
-            else:
-                await update.message.reply_text(f"Argumento desconhecido: '{key}'.")
-                return
-    except (ValueError, IndexError):
-        await update.message.reply_text("Erro de formato. Certifique-se de que os valores são números inteiros.")
-        return
 
-    response = await pomodoro.configurar(foco, pausa_curta, pausa_longa, ciclos_longa)
-    await update.message.reply_text(response)
-
-# --- Funções existentes do seu bot ---
-async def start(update, context):
-    """Responde ao comando /start."""
-    await update.message.reply_text("Olá! Eu sou seu novo bot. Como posso ajudar hoje? "
-                                    "Experimente /iniciar para começar um Pomodoro!")
-    print("EU Estou Aqui")
-
-async def ecoar_mensagem(update, context):
-    """Ecoa a mensagem de texto recebida."""
-    texto_recebido = update.message.text
-    await update.message.reply_text(f"Você disse: '{texto_recebido}'")
-
-# --- 3. Função Principal para Iniciar o Bot ---
+# --- Função Principal para Iniciar o Bot ---
 
 def main():
     """Inicia o bot."""
     application = Application.builder().token(TOKEN).build()
 
-    # Adiciona os handlers para os comandos do Pomodoro
-    application.add_handler(CommandHandler("iniciar", iniciar_pomodoro))
-    application.add_handler(CommandHandler("pausar", pausar_pomodoro))
-    application.add_handler(CommandHandler("parar", parar_pomodoro))
-    application.add_handler(CommandHandler("status", status_pomodoro))
-    application.add_handler(CommandHandler("configurar", configurar_pomodoro))
+    # Cria uma instância "vazia" de Pomodoro apenas para acessar o ConversationHandler
+    # A instância real para o usuário será criada no `open_pomodoro_menu`
+    temp_pomodoro_instance = Pomodoro() 
 
+    # Constrói o ConversationHandler para o fluxo principal do bot
+    main_conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start_command)],
+        states={
+            MAIN_MENU_STATE: [
+                CallbackQueryHandler(open_pomodoro_menu, pattern="^open_pomodoro_menu$"),
+                # Aqui você adicionaria handlers para outros módulos/menus no futuro
+            ],
+            # Adiciona o Pomodoro ConversationHandler como um sub-handler
+            # O estado que representa o Pomodoro ConversationHandler é o seu `entry_point`
+            # Ele "pega" a conversa quando o padrão do CallbackQueryHandler é acionado
+            # e a libera quando `ConversationHandler.END` é retornado de dentro dele.
+            temp_pomodoro_instance.POMODORO_MENU_STATE: [
+                temp_pomodoro_instance.get_pomodoro_conversation_handler(),
+                CallbackQueryHandler(return_to_main_menu, pattern="^main_menu_return$"), # Handler para o botão "Voltar ao Início"
+            ]
+        },
+        fallbacks=[
+            # Fallback para mensagens não reconhecidas em qualquer estado
+            MessageHandler(filters.ALL, fallback_global),
+        ],
+        # `per_user=True` é o padrão para ConversationHandler, o que é bom para nosso caso de múltiplos usuários
+        # `allow_reentry=True` permite reentrar no mesmo ConversationHandler se ele já terminou
+    )
 
-    # Adiciona os handlers que você já tinha
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ecoar_mensagem))
+    application.add_handler(main_conversation_handler)
 
     print("Bot rodando... Pressione Ctrl+C para parar.")
     application.run_polling()
 
-# --- 4. Ponto de Entrada do Script ---
+# --- Ponto de Entrada do Script ---
 if __name__ == "__main__":
     main()
