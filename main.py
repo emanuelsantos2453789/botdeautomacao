@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 
 from handlers.pomodoro import Pomodoro
-from metas import get_metas_conversation_handler, start_metas_menu # Importe as funções e o handler de metas
+from handlers.metas import get_metas_conversation_handler, start_metas_menu # Importe as funções e o handler de metas
 
 # --- 1. Your Bot Token ---
 TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" 
