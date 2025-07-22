@@ -17,7 +17,7 @@ from handlers.agenda import Agenda
 from handlers.rotina_pr import RotinasSemanais, scheduler, start_all_scheduled_jobs
 
 # --- 1. Your Bot Token ---
-TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" 
+TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwl54" 
 
 # --- Global Conversation States (of the main bot) ---
 MAIN_MENU_STATE = 0
@@ -182,8 +182,8 @@ def main():
     ))
 
     print("Bot rodando... ✨")
-    # Usa on_startup para agendar jobs ao iniciar o bot, garantindo que o scheduler inicie corretamente
-    application.run_polling(poll_interval=1.0, on_startup=start_all_scheduled_jobs)
+    # AQUI FOI ALTERADO: 'on_startup' para 'on_init'
+    application.run_polling(poll_interval=1.0, on_init=start_all_scheduled_jobs)
 
 if __name__ == "__main__":
     main()
