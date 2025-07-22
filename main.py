@@ -14,8 +14,8 @@ from handlers.pomodoro import Pomodoro
 # --- 1. Your Bot Token ---
 TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" 
 
-# Dictionary to store a Pomodoro instance for each user
-user_pomodoros = {}
+# Remova user_pomodoros daqui. Ele será armazenado em context.user_data.
+# user_pomodoros = {} 
 
 # --- Global Conversation States (of the main bot) ---
 MAIN_MENU_STATE = 0
@@ -24,14 +24,14 @@ MAIN_MENU_STATE = 0
 # --- Helper Functions for the Main Bot ---
 
 def get_main_menu_keyboard():
-    """Returns the main bot menu keyboard."""
+    """Retorna o teclado do menu principal do bot."""
     keyboard = [
         [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Responds to the /start command and displays the main bot menu."""
+    """Responde ao comando /start e exibe o menu principal do bot."""
     await update.message.reply_text(
         "Olá! Eu sou seu bot de produtividade. Escolha uma opção e vamos começar! ✨",
         reply_markup=get_main_menu_keyboard()
@@ -40,30 +40,34 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def open_pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handler for the 'Pomodoro' button in the main menu.
-    Responsible for initializing the Pomodoro instance for the user
-    and passing control to the Pomodoro ConversationHandler.
+    Handler para o botão 'Pomodoro' no menu principal.
+    Responsável por inicializar a instância do Pomodoro para o usuário
+    e passar o controle para o ConversationHandler do Pomodoro.
     """
     query = update.callback_query
     await query.answer("Abrindo Pomodoro... ⏳")
 
-    user_id = update.effective_user.id
-    # Pass bot and chat_id when creating or accessing the user's Pomodoro instance
-    if user_id not in user_pomodoros:
-        user_pomodoros[user_id] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
+    # Obtém a instância do Pomodoro para este usuário, ou cria uma nova se não existir
+    # A instância Pomodoro agora é armazenada diretamente em context.user_data
+    if 'pomodoro_instance' not in context.user_data:
+        # Passa o bot e o chat_id no momento da criação da instância
+        context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
     else:
-        # If instance already exists, update bot and chat_id in case they changed
-        user_pomodoros[user_id].bot = context.bot
-        user_pomodoros[user_id].chat_id = update.effective_chat.id
+        # Se a instância já existe, atualiza bot e chat_id caso tenham mudado
+        # Isso é importante para que a instância do Pomodoro sempre tenha a referência correta.
+        context.user_data['pomodoro_instance'].bot = context.bot
+        context.user_data['pomodoro_instance'].chat_id = update.effective_chat.id
     
-    # Delegate to the Pomodoro instance's handler to display its menu
-    return await user_pomodoros[user_id]._show_pomodoro_menu(update, context)
+    # Delega para o handler da instância Pomodoro para exibir seu menu
+    # self aqui se refere à instância do Pomodoro armazenada em user_data
+    pomodoro_instance = context.user_data['pomodoro_instance']
+    return await pomodoro_instance._show_pomodoro_menu(update, context)
 
 
 async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handler for the 'main_menu_return' callback.
-    Triggered when the Pomodoro ConversationHandler returns ConversationHandler.END.
+    Handler para o callback 'main_menu_return'.
+    Acionado quando o ConversationHandler do Pomodoro retorna ConversationHandler.END.
     """
     query = update.callback_query
     await query.edit_message_text(
@@ -75,8 +79,8 @@ async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def fallback_global(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Global fallback handler for unexpected messages or callbacks
-    in any state of the main conversation.
+    Handler de fallback global para mensagens ou callbacks inesperados
+    em qualquer estado da conversa principal.
     """
     if update.message:
         await update.message.reply_text(
@@ -92,23 +96,25 @@ async def fallback_global(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return MAIN_MENU_STATE
 
 
-# --- Main Function to Start the Bot ---
+# --- Função Principal para Iniciar o Bot ---
 
 def main():
-    """Configures and starts the bot."""
+    """Configura e inicia o bot."""
     application = Application.builder().token(TOKEN).build()
 
-    # Create a dummy Pomodoro instance just to get the handler structure
-    # The actual user-specific instances will be created/accessed in open_pomodoro_menu
-    temp_pomodoro_instance = Pomodoro() 
+    # Cria uma instância dummy da classe Pomodoro apenas para obter a estrutura do handler.
+    # As instâncias reais por usuário serão criadas/acessadas em open_pomodoro_menu.
+    # É essencial que o get_pomodoro_conversation_handler seja chamado em uma instância,
+    # mesmo que seja uma dummy, para que os métodos internos sejam referenciados corretamente.
+    temp_pomodoro_instance_for_handler_setup = Pomodoro() 
 
     main_conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_command)],
         states={
             MAIN_MENU_STATE: [
-                # The Pomodoro ConversationHandler is nested here
-                # It will use the open_pomodoro_menu as its entry point
-                temp_pomodoro_instance.get_pomodoro_conversation_handler(),
+                # O ConversationHandler do Pomodoro é aninhado aqui
+                # Ele usará o open_pomodoro_menu como seu ponto de entrada
+                temp_pomodoro_instance_for_handler_setup.get_pomodoro_conversation_handler(),
             ],
         },
         fallbacks=[
@@ -119,7 +125,7 @@ def main():
 
     application.add_handler(main_conversation_handler)
 
-    print("Bot rodando... Porraa")
+    print("Bot rodando... Porra ✨")
     application.run_polling(poll_interval=1.0)
 
 if __name__ == "__main__":
