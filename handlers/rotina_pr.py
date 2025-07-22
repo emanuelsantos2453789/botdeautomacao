@@ -1,7 +1,7 @@
 import json
 import re
 from datetime import datetime, timedelta, date
-from collections import defaultdict # Para lidar melhor com rotinas por chat_id
+from collections import defaultdict
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -12,7 +12,6 @@ from telegram.ext import (
     filters,
 )
 
-# Para o agendamento de notificações
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 
@@ -28,23 +27,20 @@ def carregar_rotinas():
     """Carrega as rotinas agendadas de um arquivo JSON."""
     try:
         with open(ROTINAS_FILE, 'r', encoding='utf-8') as f:
-            # Usamos defaultdict para garantir que o chat_id sempre tenha um dicionário interno
-            # Isso ajuda a evitar KeyErrors quando um chat_id novo é acessado.
             data = json.load(f)
             return defaultdict(dict, {k: defaultdict(list, v) for k, v in data.items()})
     except FileNotFoundError:
-        return defaultdict(dict) # Retorna um defaultdict vazio se o arquivo não existir
+        return defaultdict(dict)
 
 def salvar_rotinas(data):
     """Salva as rotinas agendadas em um arquivo JSON."""
-    # Convertemos defaultdict de volta para dict para salvar em JSON
     with open(ROTINAS_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 # Carrega as rotinas ao iniciar o módulo
 rotinas_agendadas = carregar_rotinas()
 
-# Mapeamento para garantir a ordem dos dias da semana e facilitar o cálculo da data
+# Mapeamento para garantir a ordem dos dias da semana
 DIAS_DA_SEMANA_ORDEM = [
     "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", 
     "Sexta-feira", "Sábado", "Domingo"
@@ -52,12 +48,10 @@ DIAS_DA_SEMANA_ORDEM = [
 
 # Objeto do APScheduler para gerenciar os jobs
 scheduler = AsyncIOScheduler()
-# Inicializa o scheduler apenas uma vez
-if not scheduler.running:
-    scheduler.start()
+# REMOVIDO: scheduler.start() daqui. Será iniciado em main.py na função on_startup.
 
 
-# --- Helpers de Parse da Rotina (Melhorado e mais robusto) ---
+# --- Helpers de Parse da Rotina (Melhorado) ---
 def parse_rotina_textual(texto_rotina):
     """
     Analisa o texto de uma rotina semanal e o converte em uma estrutura de dados,
@@ -74,8 +68,6 @@ def parse_rotina_textual(texto_rotina):
         "domingo": "Domingo"
     }
 
-    # Regex para capturar o dia da semana no início de uma linha
-    # Adicionado "(?:Dia|Noite) " para capturar casos como "Noite: Relax"
     blocos_dias = re.split(
         r'^(?:[🟡🟠🔴🔵🟢🟣🟤]\s*)?([A-Za-zçÇáàãâéêíóôõúüÁÀÃÂÉÊÍÓÔÕÚÜ\s-]+-feira|Sábado|Domingo)\n', 
         texto_rotina, flags=re.MULTILINE
@@ -89,16 +81,12 @@ def parse_rotina_textual(texto_rotina):
 
         if dia_normalizado:
             tarefas_do_dia = []
-            # Regex para horários (HHhMM – HHhMM: Descrição)
             padrao_tarefa_horario = re.compile(r'(\d{1,2}h\d{2})\s*–\s*(\d{1,2}h\d{2}):\s*(.*)')
-            # Regex para "Livre" com possível horário (Ex: "Livre até 14h", "Noite livre")
             padrao_tarefa_livre_com_horario = re.compile(
                 r'(.*(?:Livre|Descanso|Pausa|Tempo livre|Relax|Lazer)(?: completo| total)?.*?)'
                 r'(?:até\s*(\d{1,2}h\d{2})|\s*(\d{1,2}h\d{2})\s*-\s*(\d{1,2}h\d{2})|)$', 
                 re.IGNORECASE
             )
-            # Regex para descrições de período (Ex: "Manhã leve", "Noite: relax")
-            # Adicionado para pegar a descrição após o período
             padrao_tarefa_periodo = re.compile(r'^(Manhã|Tarde|Noite|Dia|Fim de Semana):\s*(.*)', re.IGNORECASE)
 
             for linha in conteudo_dia.split('\n'):
@@ -114,7 +102,7 @@ def parse_rotina_textual(texto_rotina):
                     try:
                         dt_inicio = datetime.strptime(inicio, "%H:%M")
                         dt_fim = datetime.strptime(fim, "%H:%M")
-                        if dt_fim < dt_inicio: # Lida com horários que passam da meia-noite
+                        if dt_fim < dt_inicio:
                             dt_fim += timedelta(days=1)
                         duracao_minutos = int((dt_fim - dt_inicio).total_seconds() / 60)
                         duracao_str = f"{duracao_minutos // 60}h {duracao_minutos % 60}m" if duracao_minutos >= 60 else f"{duracao_minutos}m"
@@ -122,7 +110,7 @@ def parse_rotina_textual(texto_rotina):
                         duracao_str = "N/A"
 
                     tarefas_do_dia.append({
-                        "id": str(datetime.now().timestamp()), # ID único para cada tarefa
+                        "id": str(datetime.now().timestamp() + len(tarefas_do_dia)), # ID único
                         "tipo": "horario_fixo",
                         "inicio": inicio,
                         "fim": fim,
@@ -136,10 +124,10 @@ def parse_rotina_textual(texto_rotina):
                     descricao_base = match_livre_com_horario.group(1).strip()
                     inicio_livre, fim_livre, duracao_str = None, None, None
                     
-                    if match_livre_com_horario.group(2): # "Livre até HHhMM"
+                    if match_livre_com_horario.group(2):
                         fim_livre = match_livre_com_horario.group(2).replace('h', ':')
                         descricao_final = f"{descricao_base} (até {fim_livre})"
-                    elif match_livre_com_horario.group(3) and match_livre_com_horario.group(4): # "Livre HHhMM - HHhMM"
+                    elif match_livre_com_horario.group(3) and match_livre_com_horario.group(4):
                         inicio_livre = match_livre_com_horario.group(3).replace('h', ':')
                         fim_livre = match_livre_com_horario.group(4).replace('h', ':')
                         try:
@@ -152,11 +140,11 @@ def parse_rotina_textual(texto_rotina):
                         except ValueError:
                             duracao_str = "N/A"
                         descricao_final = f"{descricao_base} ({inicio_livre} - {fim_livre})"
-                    else: # "Livre" ou "Noite livre total" sem horário específico
+                    else:
                         descricao_final = descricao_base
 
                     tarefas_do_dia.append({
-                        "id": str(datetime.now().timestamp() + len(tarefas_do_dia)), # Garante ID único
+                        "id": str(datetime.now().timestamp() + len(tarefas_do_dia)),
                         "tipo": "periodo_livre",
                         "descricao": descricao_final,
                         "inicio_sugerido": inicio_livre,
@@ -177,11 +165,10 @@ def parse_rotina_textual(texto_rotina):
                     })
                     continue
 
-                # Se não encaixar em nenhum dos padrões acima, trate como uma descrição simples sem horário
                 tarefas_do_dia.append({
                     "id": str(datetime.now().timestamp() + len(tarefas_do_dia)),
                     "tipo": "descricao_simples",
-                    "descricao": linha # A linha completa como descrição
+                    "descricao": linha
                 })
 
             if tarefas_do_dia:
@@ -195,7 +182,6 @@ class RotinasSemanais:
         self.bot = bot
         self.chat_id = chat_id
 
-    # --- Métodos para interagir com o usuário ---
     async def start_rotinas_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Exibe o menu principal das rotinas semanais."""
         keyboard = [
@@ -247,14 +233,13 @@ class RotinasSemanais:
                         mensagem += f"  🍃 {horario_livre_info}{tarefa['descricao']}{duracao_info}\n"
                     elif tarefa['tipo'] == "periodo_geral":
                         mensagem += f"  💡 *{tarefa['periodo']}*: {tarefa['descricao']}\n"
-                    else: # tipo "descricao_simples"
+                    else:
                         mensagem += f"  - {tarefa['descricao']}\n"
                     
-                    # Adiciona um botão para apagar tarefa individual. Usa o ID da tarefa.
                     keyboard_botoes.append(
                         [InlineKeyboardButton(f"🗑️ Apagar {dia} ({idx+1})", callback_data=f"rotinas_apagar_{dia}_{tarefa['id']}")]
                     )
-                mensagem += "\n" # Adiciona uma linha em branco entre os dias
+                mensagem += "\n"
 
         keyboard_botoes.append([InlineKeyboardButton("↩️ Voltar ao Menu de Rotinas", callback_data="rotinas_menu")])
         reply_markup = InlineKeyboardMarkup(keyboard_botoes)
@@ -315,16 +300,11 @@ class RotinasSemanais:
                 )
                 return AGUARDANDO_ROTINA_TEXTO 
 
-            # Garante que o chat_id tem uma estrutura para rotinas
             if chat_id not in rotinas_agendadas:
                 rotinas_agendadas[chat_id] = defaultdict(list)
             
-            # Adiciona as novas rotinas, mesclando com as existentes se houver
-            # Rotinas da semana passada são automaticamente para a próxima semana.
             for dia, tarefas in rotina_processada.items():
                 for nova_tarefa in tarefas:
-                    # Verifica se a tarefa (descrição e horários) já existe para evitar duplicatas exatas
-                    # Ignoramos o 'id' na comparação para verificar se a tarefa em si já está lá
                     tarefa_existe = any(
                         t.get('descricao') == nova_tarefa.get('descricao') and
                         t.get('inicio') == nova_tarefa.get('inicio') and
@@ -343,8 +323,6 @@ class RotinasSemanais:
                 "\n\nUse 'Gerenciar Rotinas' para ver tudo que você agendou. 👀"
             , parse_mode='Markdown')
             
-            # Após adicionar, reagenda todos os jobs para este usuário
-            # Isso garante que novas tarefas sejam agendadas e antigas sejam atualizadas
             await self.reschedule_all_user_jobs(chat_id, context)
 
             return await self.start_rotinas_menu(update, context) 
@@ -355,7 +333,6 @@ class RotinasSemanais:
                 "Verifique se o formato está correto e tente novamente, por favor. 🙏",
                 parse_mode='Markdown'
             )
-            # del context.user_data['aguardando_rotina_texto'] # Pode-se decidir se reseta ou não aqui
             return AGUARDANDO_ROTINA_TEXTO 
 
     async def apagar_tarefa(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -364,44 +341,45 @@ class RotinasSemanais:
         await query.answer()
         chat_id = str(query.message.chat_id)
 
-        # O callback_data será algo como "rotinas_apagar_DiaDaSemana_IDdaTarefa"
         _, _, dia, tarefa_id = query.data.split('_')
         
         user_rotinas = rotinas_agendadas.get(chat_id, {})
-        if dia in user_rotinas:
-            tarefa_removida = None
-            # Encontra e remove a tarefa pelo ID
-            for i, tarefa in enumerate(user_rotinas[dia]):
-                if tarefa.get('id') == tarefa_id:
-                    tarefa_removida = user_rotinas[dia].pop(i)
-                    break
+        tarefa_encontrada = False
+        dia_da_tarefa = None
+        
+        for dia_nome in DIAS_DA_SEMANA_ORDEM:
+            if dia_nome in user_rotinas:
+                for i, tarefa in enumerate(user_rotinas[dia_nome]):
+                    if tarefa.get('id') == tarefa_id:
+                        tarefa_removida = user_rotinas[dia_nome].pop(i)
+                        tarefa_encontrada = True
+                        dia_da_tarefa = dia_nome
+                        break
+            if tarefa_encontrada:
+                break
+        
+        if tarefa_encontrada:
+            if dia_da_tarefa and not user_rotinas[dia_da_tarefa]:
+                del user_rotinas[dia_da_tarefa]
             
-            if tarefa_removida:
-                # Se o dia ficar vazio, remove o dia
-                if not user_rotinas[dia]:
-                    del user_rotinas[dia]
-                
-                # Se o chat_id não tiver mais rotinas, remove o chat_id
-                if not user_rotinas: # Verifica se o defaultdict está vazio
-                    del rotinas_agendadas[chat_id]
+            if not user_rotinas:
+                del rotinas_agendadas[chat_id]
 
-                salvar_rotinas(rotinas_agendadas)
-                await query.edit_message_text(f"🗑️ Tarefa removida: _{tarefa_removida.get('descricao', 'Tarefa')}_. Certo! ✅")
-                # Remove o job agendado para esta tarefa específica
-                job_id = f"notificacao_{chat_id}_{tarefa_id}"
-                if scheduler.get_job(job_id):
-                    scheduler.remove_job(job_id)
-            else:
-                await query.edit_message_text("Essa tarefa não foi encontrada ou já foi removida. Tente novamente listando as rotinas. 🤔")
+            salvar_rotinas(rotinas_agendadas)
+            
+            await query.edit_message_text(f"🗑️ Tarefa removida: _{tarefa_removida.get('descricao', 'Tarefa')}_. Certo! ✅")
+            
+            job_id = f"notificacao_{chat_id}_{tarefa_id}"
+            if scheduler.get_job(job_id):
+                scheduler.remove_job(job_id)
         else:
             await query.edit_message_text("Essa tarefa não foi encontrada ou já foi removida. Tente novamente listando as rotinas. 🤔")
         
-        # Volta para o menu de gerenciar rotinas para ver o estado atualizado
         return await self.gerenciar_rotinas(update, context)
 
     # --- Lógica de Agendamento (APScheduler) ---
 
-    async def reschedule_all_user_jobs(self, chat_id: str, context: ContextTypes.DEFAULT_TYPE):
+    async def reschedule_all_user_jobs(self, chat_id: str, bot_instance: ContextTypes.DEFAULT_TYPE):
         """
         Remove todos os jobs agendados para um usuário e os reagenda com as rotinas atuais.
         Chamado após adicionar/remover rotinas.
@@ -413,9 +391,8 @@ class RotinasSemanais:
         
         user_rotinas = rotinas_agendadas.get(chat_id)
         if not user_rotinas:
-            return # Sem rotinas para agendar
+            return
 
-        # Agendamento para cada tarefa com horário fixo
         today_weekday_idx = datetime.now().weekday() # 0=Segunda, 6=Domingo
 
         for dia_nome in DIAS_DA_SEMANA_ORDEM:
@@ -424,124 +401,154 @@ class RotinasSemanais:
                 
                 for tarefa in user_rotinas[dia_nome]:
                     if tarefa['tipo'] == "horario_fixo":
-                        inicio_str = tarefa['inicio'] # Ex: "10:30"
+                        inicio_str = tarefa['inicio']
                         
-                        # Calcula a data do próximo dia da semana
                         days_ahead = dia_idx - today_weekday_idx
-                        if days_ahead < 0: # Se o dia já passou nesta semana, agenda para a próxima
+                        # Se o dia já passou nesta semana ou o horário já passou hoje
+                        agora_time = datetime.now().time()
+                        tarefa_time = datetime.strptime(inicio_str, "%H:%M").time()
+
+                        if days_ahead < 0: # Dia já passou esta semana
                             days_ahead += 7
-                        elif days_ahead == 0: # Se for hoje, verifica se o horário já passou
-                            agora = datetime.now()
-                            hora_tarefa = datetime.strptime(inicio_str, "%H:%M").time()
-                            if agora.time() > hora_tarefa: # Se o horário já passou hoje, agenda para a próxima semana
-                                days_ahead += 7
+                        elif days_ahead == 0 and agora_time > tarefa_time: # É hoje, mas o horário já passou
+                            days_ahead += 7
 
                         proxima_data = datetime.now() + timedelta(days=days_ahead)
                         
-                        # Combina a data calculada com o horário da tarefa
                         agendamento_dt = datetime(
                             proxima_data.year, proxima_data.month, proxima_data.day,
                             int(inicio_str.split(':')[0]), int(inicio_str.split(':')[1]),
-                            0 # Segundos
+                            0
                         )
 
                         job_id = f"notificacao_{chat_id}_{tarefa['id']}"
                         
                         # Adiciona o job ao scheduler para rodar semanalmente
+                        # Usando 'cron' para repetição semanal no dia e hora exatos
                         scheduler.add_job(
                             self._send_task_notification,
-                            'date', # Tipo de gatilho: data e hora específicas
-                            run_date=agendamento_dt,
+                            'cron',
+                            day_of_week=dia_idx, # Dia da semana (0=Seg, 6=Dom)
+                            hour=int(inicio_str.split(':')[0]),
+                            minute=int(inicio_str.split(':')[1]),
                             id=job_id,
-                            args=[chat_id, tarefa, context],
-                            misfire_grace_time=60, # Permite um atraso de até 60 segundos
-                            # Próximo passo para recorrência: usar 'cron' com dia da semana
-                            # scheduler.add_job(self._send_task_notification, 'cron', day_of_week=dia_idx, hour=int(inicio_str.split(':')[0]), minute=int(inicio_str.split(':')[1]), id=job_id, args=[chat_id, tarefa, context])
+                            args=[chat_id, tarefa, bot_instance], # Passa a instância do bot para a função
+                            misfire_grace_time=60 # Permite um atraso de até 60 segundos
                         )
-                        # No futuro, se quiser semanal:
-                        # scheduler.add_job(
-                        #     self._send_task_notification,
-                        #     'cron',
-                        #     day_of_week=dia_idx,
-                        #     hour=int(inicio_str.split(':')[0]),
-                        #     minute=int(inicio_str.split(':')[1]),
-                        #     id=job_id,
-                        #     args=[chat_id, tarefa, context]
-                        # )
-        salvar_rotinas(rotinas_agendadas) # Salva qualquer atualização de IDs, etc.
+                    elif tarefa['tipo'] == "periodo_livre" and tarefa.get('fim_sugerido'):
+                        # Agendar uma mensagem de "você está livre" para o fim de um período livre
+                        fim_str = tarefa['fim_sugerido']
+                        
+                        days_ahead = dia_idx - today_weekday_idx
+                        agora_time = datetime.now().time()
+                        tarefa_time = datetime.strptime(fim_str, "%H:%M").time()
+
+                        if days_ahead < 0:
+                            days_ahead += 7
+                        elif days_ahead == 0 and agora_time > tarefa_time:
+                            days_ahead += 7
+
+                        proxima_data = datetime.now() + timedelta(days=days_ahead)
+                        
+                        agendamento_dt = datetime(
+                            proxima_data.year, proxima_data.month, proxima_data.day,
+                            int(fim_str.split(':')[0]), int(fim_str.split(':')[1]),
+                            0
+                        )
+                        
+                        job_id_livre = f"livre_notificacao_{chat_id}_{tarefa['id']}"
+                        
+                        scheduler.add_job(
+                            self._send_free_period_notification,
+                            'cron',
+                            day_of_week=dia_idx,
+                            hour=int(fim_str.split(':')[0]),
+                            minute=int(fim_str.split(':')[1]),
+                            id=job_id_livre,
+                            args=[chat_id, tarefa, bot_instance],
+                            misfire_grace_time=60
+                        )
+        salvar_rotinas(rotinas_agendadas)
 
 
-    async def _send_task_notification(self, chat_id: str, tarefa: dict, context: ContextTypes.DEFAULT_TYPE):
+    async def _send_task_notification(self, chat_id: str, tarefa: dict, bot_instance: ContextTypes.DEFAULT_TYPE):
         """Envia a notificação da tarefa ao usuário."""
-        # Se o bot não estiver mais disponível (ex: restart), o contexto pode ser problemático.
-        # É ideal ter o `bot` diretamente acessível ou usar `context.bot`.
         try:
             descricao = tarefa.get('descricao', 'Sua tarefa')
             duracao_info = f" ({tarefa['duracao']})" if tarefa.get('duracao') else ""
             
             keyboard = [
                 [InlineKeyboardButton("✅ Concluída!", callback_data=f"rotinas_concluir_{tarefa['id']}")],
-                # [InlineKeyboardButton(" snooze", callback_data=f"rotinas_snooze_{tarefa['id']}")], # Opção futura para adiar
+                # [InlineKeyboardButton("➡️ Adiar 10min", callback_data=f"rotinas_snooze_{tarefa['id']}_10")], # Opção futura para adiar
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            await context.bot.send_message(
+            await bot_instance.send_message(
                 chat_id=chat_id,
-                text=f"🔔 *Lembrete!* Sua tarefa começa agora: \n\n"
+                text=f"🔔 *ATENÇÃO! Sua próxima tarefa começa AGORA:*\n\n"
                      f"⏰ `{tarefa['inicio']}-{tarefa['fim']}`: _{descricao}_{duracao_info}\n\n"
-                     f"Já concluiu? Avise-me! 👇",
+                     f"Já concluiu? Me avise para eu registrar! 👇",
                 parse_mode='Markdown',
                 reply_markup=reply_markup
             )
         except Exception as e:
-            print(f"Erro ao enviar notificação para {chat_id}: {e}")
-            # Lidar com usuários que bloquearam o bot, etc.
+            print(f"Erro ao enviar notificação da tarefa para {chat_id}: {e}")
+
+    async def _send_free_period_notification(self, chat_id: str, tarefa: dict, bot_instance: ContextTypes.DEFAULT_TYPE):
+        """Envia uma notificação informando que o usuário está livre."""
+        try:
+            await bot_instance.send_message(
+                chat_id=chat_id,
+                text=f"🥳 *Ótima notícia!* Seu período de _{tarefa['descricao']}_ termina agora. "
+                     "Você está *livre* para o que quiser! Que tal um descanso? ☕",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            print(f"Erro ao enviar notificação de período livre para {chat_id}: {e}")
+
 
     async def concluir_tarefa_notificada(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Marca uma tarefa notificada como concluída (e a remove da rotina semanal)."""
+        """Marca uma tarefa notificada como concluída (e a remove da rotina semanal para aquela instância)."""
         query = update.callback_query
-        await query.answer("Certo, anotado! ✅")
+        # Não precisa de query.answer() aqui, pois edit_message_text já responde
         chat_id = str(query.message.chat_id)
         
-        # O callback_data será algo como "rotinas_concluir_IDdaTarefa"
         _, _, tarefa_id = query.data.split('_')
 
-        user_rotinas = rotinas_agendadas.get(chat_id, {})
-        tarefa_encontrada = False
-        dia_da_tarefa = None
-        
-        # Percorre todas as rotinas para encontrar a tarefa pelo ID único
-        for dia_nome in DIAS_DA_SEMANA_ORDEM:
-            if dia_nome in user_rotinas:
-                for i, tarefa in enumerate(user_rotinas[dia_nome]):
-                    if tarefa.get('id') == tarefa_id:
-                        user_rotinas[dia_nome].pop(i) # Remove a tarefa
-                        tarefa_encontrada = True
-                        dia_da_tarefa = dia_nome
-                        break
-            if tarefa_encontrada:
-                break
-        
-        if tarefa_encontrada:
-            # Limpa o dia se ele ficar vazio
-            if dia_da_tarefa and not user_rotinas[dia_da_tarefa]:
-                del user_rotinas[dia_da_tarefa]
-            
-            # Limpa o chat_id se não houver mais rotinas
-            if not user_rotinas:
-                del rotinas_agendadas[chat_id]
+        # Para esta versão, não removemos a tarefa da rotina semanal permanente,
+        # apenas editamos a mensagem de notificação para indicar que foi concluída
+        # para *aquela instância de notificação*.
+        # A tarefa continuará agendada para as próximas semanas pelo APScheduler (tipo 'cron').
 
-            salvar_rotinas(rotinas_agendadas)
+        try:
+            # Edita a mensagem original da notificação
+            await query.edit_message_text(
+                f"🎉 Tarefa marcada como *concluída*! Mandou bem! 💪\n\n"
+                f"Sua próxima notificação chegará no horário! 🔔",
+                parse_mode='Markdown'
+            )
+            # Remove o job do scheduler para esta instância específica de notificação (se fosse 'date')
+            # Como agora estamos usando 'cron', a tarefa continua agendada semanalmente.
+            # Se você quiser que "concluir" signifique "não me notifique mais ESTA semana sobre ISSO",
+            # precisaríamos de uma lógica mais avançada para desabilitar a notificação APENAS para a semana atual.
+            # Por enquanto, o botão apenas confirma a conclusão da instância da notificação.
             
-            # Edita a mensagem da notificação para indicar que foi concluída
-            await query.edit_message_text(f"🎉 Tarefa marcada como *concluída*! Manda ver! 💪", parse_mode='Markdown')
+            # Se a intenção é que, ao clicar "Concluída", ela não apareça MAIS, nem na próxima semana,
+            # então você usaria a lógica de 'pop' e 'salvar_rotinas' como antes.
+            # Mas, pelo seu exemplo de "rotina semanal", a ideia é que ela se repita.
+            # Vamos manter que clicar "Concluída" apenas tira a notificação atual.
             
-            # Remove o job do scheduler para evitar futuras notificações duplicadas desta instância
-            job_id = f"notificacao_{chat_id}_{tarefa_id}"
-            if scheduler.get_job(job_id):
-                scheduler.remove_job(job_id)
-        else:
-            await query.edit_message_text("Essa tarefa já foi concluída ou não foi encontrada. Bom trabalho! 👍")
+            # O ID do job APScheduler é fixo para a tarefa semanal.
+            # Se você quisesse desativar para a semana corrente, a lógica seria bem mais complexa,
+            # talvez guardando um "skip_this_week" em user_data.
+            
+            # Por agora, o clique no botão apenas muda o texto da notificação.
+            # A tarefa em si permanece na rotina semanal para as próximas ocorrências.
+
+        except Exception as e:
+            print(f"Erro ao concluir tarefa notificada para {chat_id}: {e}")
+            await query.edit_message_text("Ops! Não consegui marcar como concluída agora. Tente novamente! 😕")
+
 
     def get_rotinas_semanais_conversation_handler(self) -> ConversationHandler:
         """
@@ -577,19 +584,14 @@ async def start_all_scheduled_jobs(application: Application):
     """
     Função chamada uma vez na inicialização do bot para agendar todas as rotinas salvas.
     """
-    print("Agendando rotinas semanais existentes...")
-    rotinas_instance_dummy = RotinasSemanais(bot=application.bot) # Instância dummy para usar o método reschedule
-    
-    for chat_id in rotinas_agendadas:
-        # A API do `JobQueue` (context.job_queue) é a forma correta de agendar tarefas recorrentes
-        # no python-telegram-bot, mas aqui estamos usando APScheduler diretamente.
-        # Se você quiser que o `context` esteja disponível nas tarefas agendadas,
-        # você precisaria passá-lo ou ter uma referência ao `Application` ou `bot`.
-        
-        # Para simplificar agora e manter o APScheduler direto:
-        # Passamos o `context.bot` e `chat_id` diretamente para o método
-        await rotinas_instance_dummy.reschedule_all_user_jobs(chat_id, application.bot) 
+    # INICIAR O SCHEDULER AQUI!
+    if not scheduler.running:
+        scheduler.start()
+        print("APScheduler iniciado.")
 
-# Adicione esta função ao seu main.py no final da função main()
-# application.run_polling(poll_interval=1.0, on_startup=start_all_scheduled_jobs)
-# E o `concluir_tarefa_notificada` deve ser um handler na aplicação principal
+    print("Agendando rotinas semanais existentes para todos os usuários...")
+    rotinas_instance_dummy = RotinasSemanais(bot=application.bot)
+    
+    # Itera sobre todos os chat_ids que possuem rotinas salvas
+    for chat_id in rotinas_agendadas.keys():
+        await rotinas_instance_dummy.reschedule_all_user_jobs(chat_id, application.bot)
