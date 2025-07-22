@@ -1,4 +1,3 @@
-# handlers/pomodoro.py
 import time
 import threading
 import asyncio
@@ -20,16 +19,19 @@ class Pomodoro:
     SET_LONG_BREAK_TIME_STATE = 4
     SET_CYCLES_STATE = 5
 
+    # Intervalo para atualização da mensagem de status no Telegram (em segundos)
+    ATUALIZACAO_STATUS_INTERVAL = 10 
+
     def __init__(self, bot=None, chat_id=None):
         self.foco_tempo = 25 * 60  # 25 minutes in seconds
-        self.pausa_curta_tempo = 5 * 60 # 5 minutes in seconds
-        self.pausa_longa_tempo = 15 * 60 # 15 minutes in seconds
+        self.pausa_curta_tempo = 5 * 60  # 5 minutes in seconds
+        self.pausa_longa_tempo = 15 * 60  # 15 minutes in seconds
         self.ciclos_para_pausa_longa = 4
 
-        self.estado = "ocioso" # States: "ocioso", "foco", "pausa_curta", "pausa_longa", "pausado"
+        self.estado = "ocioso"  # States: "ocioso", "foco", "pausa_curta", "pausa_longa", "pausado"
         self.tempo_restante = 0
-        self.ciclos_completados = 0 # Cycles completed in current session
-        self.tipo_atual = None # Current type: "foco", "pausa_curta", "pausa_longa"
+        self.ciclos_completados = 0  # Cycles completed in current session
+        self.tipo_atual = None  # Current type: "foco", "pausa_curta", "pausa_longa"
 
         # History for final report (accumulates during the session)
         self.historico_foco_total = 0
@@ -39,10 +41,10 @@ class Pomodoro:
 
         self._timer_thread = None
         self._parar_temporizador = threading.Event()
-        self._current_status_message_id = None # Store message_id for status updates
+        self._current_status_message_id = None  # Store message_id for status updates
 
-        self.bot = bot
-        self.chat_id = chat_id
+        self.bot = bot # Bot instance from main.py
+        self.chat_id = chat_id # Chat ID from main.py
 
     def _formatar_tempo(self, segundos):
         """Formats seconds into MM:SS."""
@@ -50,21 +52,20 @@ class Pomodoro:
         sec = segundos % 60
         return f"{min:02d}:{sec:02d}"
 
-    async def _rodar_temporizador(self):
+    async def _rodar_temporizador(self, initial_message_id=None):
         """
         Internal function to manage the countdown.
         Runs in a separate thread.
         """
         self._parar_temporizador.clear() # Clear stop signal to start fresh
 
-        # Initial message when a new cycle starts (not when resuming from pause)
-        if self.bot and self.chat_id and self.estado != "pausado":
-            await self.bot.send_message(self.chat_id, f"🌟 Iniciando seu período de {self.tipo_atual.capitalize()}! Tempo: {self._formatar_tempo(self.tempo_restante)} 🎉")
+        self._current_status_message_id = initial_message_id # Set ID if passed
+
+        last_update_time = time.time() # To control update frequency
 
         while self.tempo_restante > 0 and not self._parar_temporizador.is_set():
-            # Update status message if a message ID is set (i.e., user pressed 'Status')
-            # Update more frequently if needed, e.g., every 5-10 seconds for visual feedback
-            if self._current_status_message_id:
+            # Update status message if a message ID is set and enough time has passed
+            if self._current_status_message_id and (time.time() - last_update_time) >= self.ATUALIZACAO_STATUS_INTERVAL:
                 try:
                     await self.bot.edit_message_text(
                         chat_id=self.chat_id,
@@ -73,20 +74,34 @@ class Pomodoro:
                         reply_markup=self._get_pomodoro_menu_keyboard(),
                         parse_mode='Markdown'
                     )
+                    last_update_time = time.time() # Reset last update time
                 except Exception as e:
                     # Catch "Message is not modified" or other errors if message was deleted/edited elsewhere
                     # print(f"Erro ao atualizar mensagem de status: {e}")
+                    # If message no longer exists, clear ID to prevent further errors
+                    if "message to edit not found" in str(e).lower() or "message is not modified" not in str(e):
+                        self._current_status_message_id = None
                     pass # Just suppress the error, no need to stop the timer
 
             await asyncio.sleep(1) # Wait 1 second
             self.tempo_restante -= 1 # Decrement time
 
         if not self._parar_temporizador.is_set(): # If timer was not stopped manually
+            # Send final status update before transitioning
+            if self._current_status_message_id and self.bot and self.chat_id:
+                try:
+                    await self.bot.edit_message_text(
+                        chat_id=self.chat_id,
+                        message_id=self._current_status_message_id,
+                        text=self.status(), # Show 00:00 or final status
+                        reply_markup=self._get_pomodoro_menu_keyboard(),
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    pass # Ignore if message can't be updated at the very end
+            
             await self._proximo_estado()
-        else:
-            # If stopped manually, clear the status message ID
-            self._current_status_message_id = None
-
+        # No else block here, as _parar_temporizador.set() is handled by the caller
 
     async def _proximo_estado(self):
         """Logic to transition to the next Pomodoro state (focus, short break, long break)."""
@@ -118,52 +133,90 @@ class Pomodoro:
             self.tempo_restante = self.foco_tempo
             self.tipo_atual = "foco"
             msg_notificacao = "🚀 De volta ao Foco! Vamos lá, a produtividade te espera! 💪"
-        else: # Reset if in an unexpected state
+        else: # Reset if in an unexpected state or stopping the last cycle
             self.estado = "ocioso"
             self.tempo_restante = 0
             self.tipo_atual = None
+            msg_notificacao = "Pomodoro concluído! Pronto para o próximo ciclo? 🎉"
+
 
         if self.bot and self.chat_id and msg_notificacao:
+            # Send the notification message
             await self.bot.send_message(self.chat_id, msg_notificacao)
 
-        if self.estado != "ocioso":
-            if self.bot and hasattr(self.bot, 'loop'):
-                self._timer_thread = threading.Thread(
-                    target=lambda: asyncio.run_coroutine_threadsafe(
-                        self._rodar_temporizador(), self.bot.loop
-                    ).result()
+            # If not going to ocioso, then start the next timer cycle and get its message_id
+            if self.estado != "ocioso":
+                # Send the initial status message for the next cycle
+                status_msg = await self.bot.send_message(
+                    self.chat_id, 
+                    self.status(), 
+                    reply_markup=self._get_pomodoro_menu_keyboard(), 
+                    parse_mode='Markdown'
                 )
-                self._timer_thread.start()
+                # Pass this message_id to the timer for updates
+                self._current_status_message_id = status_msg.message_id
+                
+                if self.bot and hasattr(self.bot, 'loop'):
+                    # Schedule _rodar_temporizador to run in the event loop
+                    self._timer_thread = threading.Thread(
+                        target=lambda: asyncio.run_coroutine_threadsafe(
+                            self._rodar_temporizador(initial_message_id=self._current_status_message_id), self.bot.loop
+                        ).result()
+                    )
+                    self._timer_thread.start()
+                else:
+                    print("ERRO: bot ou bot.loop não disponível para iniciar o temporizador. Falling back to ocioso.")
+                    self.estado = "ocioso"
             else:
-                print("ERRO: bot ou bot.loop não disponível para iniciar o temporizador. Falling back to ocioso.")
-                self.estado = "ocioso"
+                self._current_status_message_id = None # No active timer, clear status ID
 
     async def iniciar(self):
         """Starts or resumes the Pomodoro timer."""
+        # Ensure bot and chat_id are set (important for the first run)
+        if not self.bot or not self.chat_id:
+            return "Ops! O bot não foi inicializado corretamente para o Pomodoro. Tente novamente mais tarde. 😢"
+
         if self._timer_thread and self._timer_thread.is_alive():
             return "O Pomodoro já está rodando! Mantenha o foco. 🎯"
 
-        if self.estado == "ocioso" or self.estado == "pausado":
-            if self.estado == "ocioso":
-                self.estado = "foco"
-                self.tempo_restante = self.foco_tempo
-                self.tipo_atual = "foco"
-                response = "🎉 Pomodoro iniciado! Hora de focar e brilhar! ✨"
-            elif self.estado == "pausado":
-                response = "▶️ Pomodoro retomado! Vamos continuar firme! 💪"
-            
-            if self.bot and hasattr(self.bot, 'loop'):
-                self._timer_thread = threading.Thread(
-                    target=lambda: asyncio.run_coroutine_threadsafe(
-                        self._rodar_temporizador(), self.bot.loop
-                    ).result()
-                )
-                self._timer_thread.start()
-                return response
-            else:
-                return "Ops! Não consegui iniciar o Pomodoro. Tente novamente mais tarde. 😢"
+        response = ""
+        initial_status_msg_text = ""
+
+        if self.estado == "ocioso":
+            self.estado = "foco"
+            self.tempo_restante = self.foco_tempo
+            self.tipo_atual = "foco"
+            response = "🎉 Pomodoro iniciado! Hora de focar e brilhar! ✨"
+            initial_status_msg_text = f"🌟 Iniciando seu período de {self.tipo_atual.capitalize()}! Tempo: {self._formatar_tempo(self.tempo_restante)} 🎉"
+        elif self.estado == "pausado":
+            response = "▶️ Pomodoro retomado! Vamos continuar firme! 💪"
+            initial_status_msg_text = f"🚀 Retomando seu período de {self.tipo_atual.capitalize()}! Tempo restante: {self._formatar_tempo(self.tempo_restante)} ⏳"
         else:
             return "O Pomodoro já está em andamento. Use o botão 'Parar' para finalizar ou 'Pausar'. ⏯️"
+        
+        # Send initial status message and store its ID
+        try:
+            status_message = await self.bot.send_message(
+                self.chat_id, 
+                initial_status_msg_text,
+                reply_markup=self._get_pomodoro_menu_keyboard(),
+                parse_mode='Markdown'
+            )
+            self._current_status_message_id = status_message.message_id
+        except Exception as e:
+            print(f"Erro ao enviar mensagem inicial do Pomodoro: {e}")
+            return "Ops! Não consegui enviar a mensagem inicial do Pomodoro. Tente novamente mais tarde. 😢"
+
+        if self.bot and hasattr(self.bot, 'loop'):
+            self._timer_thread = threading.Thread(
+                target=lambda: asyncio.run_coroutine_threadsafe(
+                    self._rodar_temporizador(initial_message_id=self._current_status_message_id), self.bot.loop
+                ).result()
+            )
+            self._timer_thread.start()
+            return response
+        else:
+            return "Ops! Não consegui iniciar o Pomodoro. Tente novamente mais tarde. 😢"
 
     async def pausar(self):
         """Pauses the Pomodoro timer."""
@@ -172,7 +225,7 @@ class Pomodoro:
             if self._timer_thread:
                 self._timer_thread.join()
             self.estado = "pausado"
-            self._current_status_message_id = None # Clear status message ID on pause
+            # Keep _current_status_message_id so 'Status' button can update it
             return "⏸️ Pomodoro pausado. Você pode retomar a qualquer momento! 😌"
         elif self.estado == "pausado":
             return "O Pomodoro já está pausado. Que tal retomar? ▶️"
@@ -185,17 +238,17 @@ class Pomodoro:
             return "Não há Pomodoro ativo para parar. Seu dia está livre! 🎉"
 
         self._parar_temporizador.set()
-        if self._timer_thread:
-            self._timer_thread.join()
+        if self._timer_thread and self._timer_thread.is_alive():
+            self._timer_thread.join(timeout=2) # Wait a bit for thread to finish
 
+        # Generate report before clearing history
+        report = self.gerar_relatorio()
+        
         # Reset state
         self.estado = "ocioso"
         self.tempo_restante = 0
         self.tipo_atual = None
         self.ciclos_completados = 0
-
-        # Generate report before clearing history
-        report = self.gerar_relatorio()
         
         # Clear history after generating the report for the next full cycle
         self.historico_foco_total = 0
@@ -314,7 +367,12 @@ class Pomodoro:
     async def _show_pomodoro_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Displays the main Pomodoro menu."""
         query = update.callback_query
-        # The query was already answered by open_pomodoro_menu in main.py
+        # Ensure bot and chat_id are updated for this specific user's Pomodoro instance
+        user_id = update.effective_user.id
+        if user_id in user_pomodoros:
+            user_pomodoros[user_id].bot = context.bot
+            user_pomodoros[user_id].chat_id = update.effective_chat.id
+
         await query.edit_message_text(
             "Bem-vindo ao seu assistente Pomodoro! 🍅 Escolha uma ação e vamos ser produtivos! ✨",
             reply_markup=self._get_pomodoro_menu_keyboard()
@@ -327,9 +385,18 @@ class Pomodoro:
         """Handler for the 'Start' button."""
         query = update.callback_query
         await query.answer()
+        # Ensure bot and chat_id are correctly set here as well, although already done in open_pomodoro_menu
+        self.bot = context.bot
+        self.chat_id = update.effective_chat.id
+
         response = await self.iniciar()
-        # Always edit the message here, as the start message is new or resumes.
-        await query.edit_message_text(response, reply_markup=self._get_pomodoro_menu_keyboard(), parse_mode='Markdown')
+        # The 'iniciar' method now sends the initial status message. 
+        # Here we just update the original menu message.
+        await query.edit_message_text(
+            response, 
+            reply_markup=self._get_pomodoro_menu_keyboard(), 
+            parse_mode='Markdown'
+        )
         return self.POMODORO_MENU_STATE
 
     async def _pomodoro_pausar_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -337,7 +404,6 @@ class Pomodoro:
         query = update.callback_query
         await query.answer()
         response = await self.pausar()
-        # This message will always be different on pause/unpause
         await query.edit_message_text(response, reply_markup=self._get_pomodoro_menu_keyboard(), parse_mode='Markdown')
         return self.POMODORO_MENU_STATE
 
@@ -346,7 +412,6 @@ class Pomodoro:
         query = update.callback_query
         await query.answer()
         response = await self.parar()
-        # The report is always dynamic, so edit without fear.
         await query.edit_message_text(response, parse_mode='Markdown', reply_markup=self._get_pomodoro_menu_keyboard())
         return self.POMODORO_MENU_STATE
 
@@ -357,28 +422,30 @@ class Pomodoro:
         
         response = self.status()
         
-        # Always edit the message. The status text includes a countdown, making it dynamic.
-        # Store the message ID so the timer thread can update it.
         try:
             message = await query.edit_message_text(
                 response,
                 reply_markup=self._get_pomodoro_menu_keyboard(),
                 parse_mode='Markdown'
             )
-            self._current_status_message_id = message.message_id
+            # Only set _current_status_message_id if the timer is actually running
+            if self.estado in ["foco", "pausa_curta", "pausa_longa"]:
+                self._current_status_message_id = message.message_id
+            else:
+                self._current_status_message_id = None # Clear if not running
         except Exception as e:
-            # If the message cannot be edited (e.g., deleted by user), send a new one
-            # and then try to track that new message.
-            if "Message is not modified" not in str(e): # Avoid re-editing if not modified
+            if "Message is not modified" not in str(e): 
                 new_message = await query.message.reply_text(
                     "Não consegui atualizar a mensagem anterior. Aqui está o novo status:\n" + response,
                     reply_markup=self._get_pomodoro_menu_keyboard(),
                     parse_mode='Markdown'
                 )
-                self._current_status_message_id = new_message.message_id
+                if self.estado in ["foco", "pausa_curta", "pausa_longa"]:
+                    self._current_status_message_id = new_message.message_id
+                else:
+                    self._current_status_message_id = None
             else:
-                # If it's just "not modified", keep the current ID and the timer will keep trying.
-                pass 
+                pass # If it's just "not modified", keep the current ID and the timer will keep trying. 
 
         return self.POMODORO_MENU_STATE
 
@@ -442,7 +509,6 @@ class Pomodoro:
         """Handler for the 'Back to Start' button."""
         query = update.callback_query
         await query.answer("Saindo do Pomodoro. Voltando ao menu principal! 👋")
-        # Clear status message ID on exit
         self._current_status_message_id = None
         return ConversationHandler.END 
 
