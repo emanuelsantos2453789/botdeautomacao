@@ -9,13 +9,11 @@ from telegram.ext import (
     filters
 )
 
-from handlers.pomodoro import Pomodoro 
+from handlers.pomodoro import Pomodoro
+from metas import get_metas_conversation_handler, start_metas_menu # Importe as funções e o handler de metas
 
 # --- 1. Your Bot Token ---
 TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" 
-
-# Remova user_pomodoros daqui. Ele será armazenado em context.user_data.
-# user_pomodoros = {} 
 
 # --- Global Conversation States (of the main bot) ---
 MAIN_MENU_STATE = 0
@@ -27,6 +25,7 @@ def get_main_menu_keyboard():
     """Retorna o teclado do menu principal do bot."""
     keyboard = [
         [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
+        [InlineKeyboardButton("🎯 Metas Semanais", callback_data="open_metas_menu")], # Novo botão para Metas
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -54,12 +53,10 @@ async def open_pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
     else:
         # Se a instância já existe, atualiza bot e chat_id caso tenham mudado
-        # Isso é importante para que a instância do Pomodoro sempre tenha a referência correta.
         context.user_data['pomodoro_instance'].bot = context.bot
         context.user_data['pomodoro_instance'].chat_id = update.effective_chat.id
     
     # Delega para o handler da instância Pomodoro para exibir seu menu
-    # self aqui se refere à instância do Pomodoro armazenada em user_data
     pomodoro_instance = context.user_data['pomodoro_instance']
     return await pomodoro_instance._show_pomodoro_menu(update, context)
 
@@ -67,7 +64,7 @@ async def open_pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handler para o callback 'main_menu_return'.
-    Acionado quando o ConversationHandler do Pomodoro retorna ConversationHandler.END.
+    Acionado quando o ConversationHandler do Pomodoro ou Metas retorna ConversationHandler.END.
     """
     query = update.callback_query
     await query.edit_message_text(
@@ -103,9 +100,6 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     # Cria uma instância dummy da classe Pomodoro apenas para obter a estrutura do handler.
-    # As instâncias reais por usuário serão criadas/acessadas em open_pomodoro_menu.
-    # É essencial que o get_pomodoro_conversation_handler seja chamado em uma instância,
-    # mesmo que seja uma dummy, para que os métodos internos sejam referenciados corretamente.
     temp_pomodoro_instance_for_handler_setup = Pomodoro() 
 
     main_conversation_handler = ConversationHandler(
@@ -113,8 +107,9 @@ def main():
         states={
             MAIN_MENU_STATE: [
                 # O ConversationHandler do Pomodoro é aninhado aqui
-                # Ele usará o open_pomodoro_menu como seu ponto de entrada
                 temp_pomodoro_instance_for_handler_setup.get_pomodoro_conversation_handler(),
+                # Novo: O ConversationHandler das Metas é aninhado aqui
+                get_metas_conversation_handler(), # Chama a função que retorna o ConversationHandler de metas
             ],
         },
         fallbacks=[
@@ -125,7 +120,7 @@ def main():
 
     application.add_handler(main_conversation_handler)
 
-    print("Bot rodando... Porra ✨")
+    print("Bot rodando... ✨")
     application.run_polling(poll_interval=1.0)
 
 if __name__ == "__main__":
