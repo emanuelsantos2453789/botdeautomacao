@@ -1,4 +1,3 @@
-# main.py
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
@@ -13,7 +12,7 @@ from telegram.ext import (
 from handlers.pomodoro import Pomodoro 
 
 # --- 1. Your Bot Token ---
-TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" # <-- REMEMBER TO UPDATE THIS!
+TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" 
 
 # Dictionary to store a Pomodoro instance for each user
 user_pomodoros = {}
@@ -49,9 +48,15 @@ async def open_pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer("Abrindo Pomodoro... ⏳")
 
     user_id = update.effective_user.id
+    # Pass bot and chat_id when creating or accessing the user's Pomodoro instance
     if user_id not in user_pomodoros:
         user_pomodoros[user_id] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
+    else:
+        # If instance already exists, update bot and chat_id in case they changed
+        user_pomodoros[user_id].bot = context.bot
+        user_pomodoros[user_id].chat_id = update.effective_chat.id
     
+    # Delegate to the Pomodoro instance's handler to display its menu
     return await user_pomodoros[user_id]._show_pomodoro_menu(update, context)
 
 
@@ -93,12 +98,16 @@ def main():
     """Configures and starts the bot."""
     application = Application.builder().token(TOKEN).build()
 
+    # Create a dummy Pomodoro instance just to get the handler structure
+    # The actual user-specific instances will be created/accessed in open_pomodoro_menu
     temp_pomodoro_instance = Pomodoro() 
 
     main_conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_command)],
         states={
             MAIN_MENU_STATE: [
+                # The Pomodoro ConversationHandler is nested here
+                # It will use the open_pomodoro_menu as its entry point
                 temp_pomodoro_instance.get_pomodoro_conversation_handler(),
             ],
         },
@@ -110,7 +119,7 @@ def main():
 
     application.add_handler(main_conversation_handler)
 
-    print("Bot rodando... Pressione Ctrl+C para parar. ✨")
+    print("Bot rodando... Porraa")
     application.run_polling(poll_interval=1.0)
 
 if __name__ == "__main__":
