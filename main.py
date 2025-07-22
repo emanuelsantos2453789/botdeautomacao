@@ -29,8 +29,7 @@ def get_main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
         [InlineKeyboardButton("🎯 Metas Semanaais", callback_data="open_metas_menu")], # Novo botão para Metas
-        # --- NOVO: Adiciona o botão da Agenda ao menu principal ---
-        [InlineKeyboardButton("🗓️ Agenda", callback_data="open_agenda_menu")], 
+        [InlineKeyboardButton("🗓️ Agenda", callback_data="open_agenda_menu")], #AGENDA
     ]
     return InlineKeyboardMarkup(keyboard)
 
