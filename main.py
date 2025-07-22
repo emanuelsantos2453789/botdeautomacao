@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 
 from handlers.pomodoro import Pomodoro
-from handlers.metas import Metas # Importe a classe Metas
+from handlers.metas import get_metas_conversation_handler, start_metas_menu
 from handlers.agenda import Agenda # Importe a classe Agenda
 
 # --- 1. Your Bot Token ---
