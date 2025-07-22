@@ -10,11 +10,10 @@ from telegram.ext import (
 )
 
 from handlers.pomodoro import Pomodoro
-# A linha abaixo precisa ser ajustada para importar a classe Metas do módulo, como fizemos para Pomodoro e Agenda.
-# No formato original: from metas import get_metas_conversation_handler, start_metas_menu
-# O correto é:
-from handlers.metas import  get_metas_conversation_handler, start_metas_menu
-from handlers.agenda import Agenda # NOVO: Importa a classe Agenda do módulo 'handlers/agenda.py'
+from metas import get_metas_conversation_handler, start_metas_menu # Importe as funções e o handler de metas
+
+# --- NOVO: Importa a classe Agenda do módulo 'handlers/agenda.py' ---
+from handlers.agenda import Agenda
 
 # --- 1. Your Bot Token ---
 TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" 
@@ -29,8 +28,9 @@ def get_main_menu_keyboard():
     """Retorna o teclado do menu principal do bot."""
     keyboard = [
         [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
-        [InlineKeyboardButton("🎯 Metas Semanais", callback_data="open_metas_menu")], # Botão para Metas
-        [InlineKeyboardButton("🗓️ Agenda", callback_data="open_agenda_menu")], # NOVO: Botão para Agenda
+        [InlineKeyboardButton("🎯 Metas Semanaais", callback_data="open_metas_menu")], # Novo botão para Metas
+        # --- NOVO: Adiciona o botão da Agenda ao menu principal ---
+        [InlineKeyboardButton("🗓️ Agenda", callback_data="open_agenda_menu")], 
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -65,21 +65,18 @@ async def open_pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     pomodoro_instance = context.user_data['pomodoro_instance']
     return await pomodoro_instance._show_pomodoro_menu(update, context)
 
-# NOVO: Handler para abrir o menu de Metas
+
 async def open_metas_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handler para o botão 'Metas Semanais' no menu principal.
-    Cria uma instância da classe Metas e delega para seu handler de início.
+    Chama a função start_metas_menu do módulo metas.
     """
     query = update.callback_query
     await query.answer("Abrindo Metas Semanais... 🎯")
-    
-    # Cria uma instância da classe Metas para iniciar a conversa
-    metas_instance = Metas()
-    # Chama o handler de entrada do ConversationHandler de Metas
-    return await metas_instance.start_metas_menu(update, context)
+    return await start_metas_menu(update, context) # Mantido como estava no seu código original
 
-# NOVO: Handler para abrir o menu da Agenda
+
+# --- NOVO: Handler para abrir o menu da Agenda ---
 async def open_agenda_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handler para o botão 'Agenda' no menu principal.
@@ -97,7 +94,7 @@ async def open_agenda_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handler para o callback 'main_menu_return'.
-    Acionado quando um ConversationHandler aninhado retorna ConversationHandler.END.
+    Acionado quando o ConversationHandler do Pomodoro, Metas ou Agenda retorna ConversationHandler.END.
     """
     query = update.callback_query
     await query.edit_message_text(
@@ -132,13 +129,10 @@ def main():
     """Configura e inicia o bot."""
     application = Application.builder().token(TOKEN).build()
 
-    # Cria instâncias dummy das classes para configurar os ConversationHandlers aninhados.
-    # Essas instâncias são usadas apenas para obter a estrutura do handler,
-    # o estado real da conversa é gerenciado por instâncias criadas dentro dos handlers open_*.
+    # Cria uma instância dummy da classe Pomodoro apenas para obter a estrutura do handler.
     temp_pomodoro_instance_for_handler_setup = Pomodoro() 
-    # NOVO: Instância dummy para Metas (importado como classe Metas)
-    temp_metas_instance_for_handler_setup = Metas() 
-    # NOVO: Instância dummy para Agenda
+
+    # --- NOVO: Cria uma instância dummy da classe Agenda ---
     temp_agenda_instance_for_handler_setup = Agenda()
 
     main_conversation_handler = ConversationHandler(
@@ -147,9 +141,9 @@ def main():
             MAIN_MENU_STATE: [
                 # O ConversationHandler do Pomodoro é aninhado aqui
                 temp_pomodoro_instance_for_handler_setup.get_pomodoro_conversation_handler(),
-                # O ConversationHandler das Metas é aninhado aqui
-                temp_metas_instance_for_handler_setup.get_metas_conversation_handler(), # Chama o método da instância
-                # NOVO: O ConversationHandler da Agenda é aninhado aqui
+                # Novo: O ConversationHandler das Metas é aninhado aqui
+                get_metas_conversation_handler(), # Chama a função que retorna o ConversationHandler de metas
+                # --- NOVO: O ConversationHandler da Agenda é aninhado aqui ---
                 temp_agenda_instance_for_handler_setup.get_agenda_conversation_handler(),
             ],
         },
