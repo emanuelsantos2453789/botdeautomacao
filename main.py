@@ -13,7 +13,7 @@ from handlers.pomodoro import Pomodoro
 from handlers.metas import get_metas_conversation_handler, start_metas_menu 
 from handlers.agenda import Agenda
 
-# --- NOVO: Importa a classe RotinasSemanais, e AGORA TAMBÉM o scheduler e a função de startup ---
+# --- Importa a classe RotinasSemanais, o scheduler e a função de startup ---
 from handlers.rotina_pr import RotinasSemanais, scheduler, start_all_scheduled_jobs
 
 # --- 1. Your Bot Token ---
@@ -148,9 +148,8 @@ def main():
     """Configura e inicia o bot."""
     application = Application.builder().token(TOKEN).build()
 
-    temp_pomodoro_instance_for_handler_setup = Pomodoro() # Instância dummy para handler Pomodoro
-    temp_agenda_instance_for_handler_setup = Agenda() # Instância dummy para handler Agenda
-    # --- Instância dummy para handler de Rotinas Semanais ---
+    temp_pomodoro_instance_for_handler_setup = Pomodoro()
+    temp_agenda_instance_for_handler_setup = Agenda()
     temp_rotinas_semanais_instance_for_handler_setup = RotinasSemanais() 
 
     main_conversation_handler = ConversationHandler(
@@ -160,14 +159,11 @@ def main():
                 CallbackQueryHandler(open_pomodoro_menu, pattern="^open_pomodoro_menu$"),
                 CallbackQueryHandler(open_metas_menu, pattern="^open_metas_menu$"),
                 CallbackQueryHandler(open_agenda_menu, pattern="^open_agenda_menu$"),
-                # --- Adiciona o CallbackQueryHandler para Rotinas Semanais ---
                 CallbackQueryHandler(open_rotinas_semanais_menu, pattern="^open_rotinas_semanais_menu$"),
 
-                # Aninha os ConversationHandlers de cada funcionalidade
                 temp_pomodoro_instance_for_handler_setup.get_pomodoro_conversation_handler(),
                 get_metas_conversation_handler(), 
                 temp_agenda_instance_for_handler_setup.get_agenda_conversation_handler(),
-                # --- Aninha o ConversationHandler de Rotinas Semanais ---
                 temp_rotinas_semanais_instance_for_handler_setup.get_rotinas_semanais_conversation_handler(),
             ],
         },
@@ -179,16 +175,14 @@ def main():
 
     application.add_handler(main_conversation_handler)
 
-    # --- NOVO: Handler para o botão "Concluída!" na notificação ---
-    # Este handler precisa estar no nível da Application, pois as notificações podem vir a qualquer momento
+    # --- Handler para o botão "Concluída!" na notificação ---
     application.add_handler(CallbackQueryHandler(
         temp_rotinas_semanais_instance_for_handler_setup.concluir_tarefa_notificada, 
         pattern=r"^rotinas_concluir_.*$"
     ))
 
     print("Bot rodando... ✨")
-    # --- NOVO: Use on_startup para agendar jobs ao iniciar o bot ---
-    # `on_startup` recebe o objeto `Application` como argumento.
+    # Usa on_startup para agendar jobs ao iniciar o bot, garantindo que o scheduler inicie corretamente
     application.run_polling(poll_interval=1.0, on_startup=start_all_scheduled_jobs)
 
 if __name__ == "__main__":
