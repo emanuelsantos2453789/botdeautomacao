@@ -17,7 +17,7 @@ from handlers.agenda import Agenda
 from handlers.rotina_pr import RotinasSemanais, scheduler, start_all_scheduled_jobs
 
 # --- 1. Your Bot Token ---
-TOKEN = "7857098691:AAFMiD8o0FBd0VAgOCe3D3R9H-47_1305bU" 
+TOKEN = "7857098691:AAFMiD8o0FBd0VAgOCe3D3R9H-47_13O5bU" 
 
 # --- Global Conversation States (of the main bot) ---
 MAIN_MENU_STATE = 0
