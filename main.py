@@ -13,7 +13,7 @@ from telegram.ext import (
 from handlers.pomodoro import Pomodoro 
 
 # --- 1. Your Bot Token ---
-TOKEN = "BOT_TOKEN" # <-- REMEMBER TO UPDATE THIS!
+TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" # <-- REMEMBER TO UPDATE THIS!
 
 # Dictionary to store a Pomodoro instance for each user
 user_pomodoros = {}
