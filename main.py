@@ -13,8 +13,8 @@ from handlers.pomodoro import Pomodoro
 from handlers.metas import get_metas_conversation_handler, start_metas_menu 
 from handlers.agenda import Agenda
 
-# --- NOVO: Importa a classe RotinasSemanais do novo módulo ---
-from handlers.rotina_pr import RotinasSemanais
+# --- NOVO: Importa a classe RotinasSemanais, e AGORA TAMBÉM o scheduler e a função de startup ---
+from handlers.rotina_pr import RotinasSemanais, scheduler, start_all_scheduled_jobs
 
 # --- 1. Your Bot Token ---
 TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" 
@@ -29,9 +29,9 @@ def get_main_menu_keyboard():
     """Retorna o teclado do menu principal do bot."""
     keyboard = [
         [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
-        [InlineKeyboardButton("🎯 Metas Semanaais", callback_data="open_metas_menu")],
+        [InlineKeyboardButton("🎯 Metas Semanais", callback_data="open_metas_menu")],
         [InlineKeyboardButton("🗓️ Agenda", callback_data="open_agenda_menu")],
-        # --- NOVO: Botão para Rotinas Semanais ---
+        # --- Botão para Rotinas Semanais ---
         [InlineKeyboardButton("📅 Rotinas Semanais", callback_data="open_rotinas_semanais_menu")], 
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -90,7 +90,7 @@ async def open_agenda_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     agenda_instance = context.user_data['agenda_instance']
     return await agenda_instance.start_agenda_menu(update, context)
 
-# --- NOVO: Handler para abrir o menu de Rotinas Semanais ---
+# --- Handler para abrir o menu de Rotinas Semanais ---
 async def open_rotinas_semanais_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handler para o botão 'Rotinas Semanais' no menu principal.
@@ -150,9 +150,8 @@ def main():
 
     temp_pomodoro_instance_for_handler_setup = Pomodoro() # Instância dummy para handler Pomodoro
     temp_agenda_instance_for_handler_setup = Agenda() # Instância dummy para handler Agenda
-    # --- NOVO: Instância dummy para handler de Rotinas Semanais ---
+    # --- Instância dummy para handler de Rotinas Semanais ---
     temp_rotinas_semanais_instance_for_handler_setup = RotinasSemanais() 
-
 
     main_conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_command)],
@@ -161,14 +160,14 @@ def main():
                 CallbackQueryHandler(open_pomodoro_menu, pattern="^open_pomodoro_menu$"),
                 CallbackQueryHandler(open_metas_menu, pattern="^open_metas_menu$"),
                 CallbackQueryHandler(open_agenda_menu, pattern="^open_agenda_menu$"),
-                # --- NOVO: Adiciona o CallbackQueryHandler para Rotinas Semanais ---
+                # --- Adiciona o CallbackQueryHandler para Rotinas Semanais ---
                 CallbackQueryHandler(open_rotinas_semanais_menu, pattern="^open_rotinas_semanais_menu$"),
 
                 # Aninha os ConversationHandlers de cada funcionalidade
                 temp_pomodoro_instance_for_handler_setup.get_pomodoro_conversation_handler(),
                 get_metas_conversation_handler(), 
                 temp_agenda_instance_for_handler_setup.get_agenda_conversation_handler(),
-                # --- NOVO: Aninha o ConversationHandler de Rotinas Semanais ---
+                # --- Aninha o ConversationHandler de Rotinas Semanais ---
                 temp_rotinas_semanais_instance_for_handler_setup.get_rotinas_semanais_conversation_handler(),
             ],
         },
@@ -180,8 +179,17 @@ def main():
 
     application.add_handler(main_conversation_handler)
 
+    # --- NOVO: Handler para o botão "Concluída!" na notificação ---
+    # Este handler precisa estar no nível da Application, pois as notificações podem vir a qualquer momento
+    application.add_handler(CallbackQueryHandler(
+        temp_rotinas_semanais_instance_for_handler_setup.concluir_tarefa_notificada, 
+        pattern=r"^rotinas_concluir_.*$"
+    ))
+
     print("Bot rodando... ✨")
-    application.run_polling(poll_interval=1.0)
+    # --- NOVO: Use on_startup para agendar jobs ao iniciar o bot ---
+    # `on_startup` recebe o objeto `Application` como argumento.
+    application.run_polling(poll_interval=1.0, on_startup=start_all_scheduled_jobs)
 
 if __name__ == "__main__":
     main()
