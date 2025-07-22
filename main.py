@@ -16,8 +16,12 @@ from handlers.agenda import Agenda
 # --- Importa a classe RotinasSemanais, o scheduler e a função de startup ---
 from handlers.rotina_pr import RotinasSemanais, scheduler, start_all_scheduled_jobs
 
-# --- 1. Your Bot Token ---
-TOKEN = "7857098691:AAFMiD8o0FBd0VAgOCe3D3R9H-47_13O5bU" 
+# --- 1. Seu Bot Token agora vem das variáveis de ambiente ---
+TOKEN = os.getenv("BOT_TOKEN") # <--- ALTERE ESTA LINHA
+# (Opcional, mas recomendado): Adicione uma verificação para garantir que o token foi carregado
+if not TOKEN:
+    print("ERRO: A variável de ambiente BOT_TOKEN não foi encontrada! O bot não poderá iniciar.")
+    exit(1) # Sai do programa se o token não for encontrado
 
 # --- Global Conversation States (of the main bot) ---
 MAIN_MENU_STATE = 0
