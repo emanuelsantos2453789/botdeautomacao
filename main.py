@@ -17,7 +17,7 @@ from handlers.agenda import Agenda
 from handlers.rotina_pr import RotinasSemanais, scheduler, start_all_scheduled_jobs
 
 # --- 1. Your Bot Token ---
-TOKEN = "7520699819:AAFahRDlp4GLtRZ_UDfgS0p_V4URQnhdK4I" 
+TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwl54" 
 
 # --- Global Conversation States (of the main bot) ---
 MAIN_MENU_STATE = 0
@@ -88,7 +88,8 @@ async def open_agenda_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['agenda_instance'].chat_id = update.effective_chat.id
 
     agenda_instance = context.user_data['agenda_instance']
-    return await agenda_instance.start_agenda_menu(update, context)
+    # AQUI FOI ALTERADO: 'start_agenda_menu' para 'start_agenda_main_menu'
+    return await agenda_instance.start_agenda_main_menu(update, context)
 
 # --- Handler para abrir o menu de Rotinas Semanais ---
 async def open_rotinas_semanais_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -146,7 +147,6 @@ async def fallback_global(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Configura e inicia o bot."""
-    # AQUI FOI ALTERADO: 'on_init' é um parâmetro de .builder().build()
     application = Application.builder().token(TOKEN).post_init(start_all_scheduled_jobs).build()
 
     temp_pomodoro_instance_for_handler_setup = Pomodoro()
@@ -183,7 +183,6 @@ def main():
     ))
 
     print("Bot rodando... ✨")
-    # run_polling não tem mais 'on_init'
     application.run_polling(poll_interval=1.0)
 
 if __name__ == "__main__":
