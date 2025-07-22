@@ -10,6 +10,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     filters,
+    Application,
 )
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
