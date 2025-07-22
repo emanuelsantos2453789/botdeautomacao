@@ -10,9 +10,6 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# O user_pomodoros global de main.py não será mais acessado diretamente aqui.
-# A instância do Pomodoro para cada usuário será acessada via context.user_data.
-
 class Pomodoro:
     # --- Conversation States for Pomodoro ---
     POMODORO_MENU_STATE = 0
@@ -406,7 +403,16 @@ class Pomodoro:
         query = update.callback_query
         await query.answer()
 
-        # A instância Pomodoro para o usuário atual está em context.user_data['pomodoro_instance']
+        # Adicione esta verificação aqui!
+        if 'pomodoro_instance' not in context.user_data:
+            # Se por algum motivo a instância não existir, crie-a aqui também
+            context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
+            await query.edit_message_text(
+                "Ops! Tive que iniciar seu Pomodoro. Por favor, tente novamente a ação desejada. 🚀",
+                reply_markup=self._get_pomodoro_menu_keyboard()
+            )
+            return self.POMODORO_MENU_STATE
+
         pomodoro_instance = context.user_data['pomodoro_instance']
         
         # Garante que bot e chat_id estão atualizados na instância
@@ -427,6 +433,16 @@ class Pomodoro:
         """Handler para o botão 'Pausar'."""
         query = update.callback_query
         await query.answer()
+
+        # Adicione esta verificação aqui!
+        if 'pomodoro_instance' not in context.user_data:
+            context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
+            await query.edit_message_text(
+                "Ops! Tive que iniciar seu Pomodoro. Por favor, tente novamente a ação desejada. 🚀",
+                reply_markup=self._get_pomodoro_menu_keyboard()
+            )
+            return self.POMODORO_MENU_STATE
+
         pomodoro_instance = context.user_data['pomodoro_instance']
         response = await pomodoro_instance.pausar()
         await query.edit_message_text(response, reply_markup=self._get_pomodoro_menu_keyboard(), parse_mode='Markdown')
@@ -436,6 +452,16 @@ class Pomodoro:
         """Handler para o botão 'Parar' e exibição do relatório."""
         query = update.callback_query
         await query.answer()
+
+        # Adicione esta verificação aqui!
+        if 'pomodoro_instance' not in context.user_data:
+            context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
+            await query.edit_message_text(
+                "Ops! Tive que iniciar seu Pomodoro. Por favor, tente novamente a ação desejada. 🚀",
+                reply_markup=self._get_pomodoro_menu_keyboard()
+            )
+            return self.POMODORO_MENU_STATE
+
         pomodoro_instance = context.user_data['pomodoro_instance']
         response = await pomodoro_instance.parar()
         await query.edit_message_text(response, parse_mode='Markdown', reply_markup=self._get_pomodoro_menu_keyboard())
@@ -446,6 +472,15 @@ class Pomodoro:
         query = update.callback_query
         await query.answer("Atualizando status...") # Fornece feedback imediato
         
+        # Adicione esta verificação aqui!
+        if 'pomodoro_instance' not in context.user_data:
+            context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
+            await query.edit_message_text(
+                "Ops! Tive que iniciar seu Pomodoro. Por favor, tente novamente a ação desejada. 🚀",
+                reply_markup=self._get_pomodoro_menu_keyboard()
+            )
+            return self.POMODORO_MENU_STATE
+
         pomodoro_instance = context.user_data['pomodoro_instance']
         response = pomodoro_instance.status()
         
@@ -480,6 +515,17 @@ class Pomodoro:
         """Handler para o botão 'Configurar', mostrando o menu de configuração."""
         query = update.callback_query
         await query.answer()
+
+        # Adicione esta verificação aqui!
+        if 'pomodoro_instance' not in context.user_data:
+            context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
+            await query.edit_message_text(
+                "Ops! Tive que iniciar seu Pomodoro. Por favor, tente novamente a ação desejada. 🚀",
+                reply_markup=self._get_pomodoro_menu_keyboard()
+            )
+            return self.POMODORO_MENU_STATE
+
+
         pomodoro_instance = context.user_data['pomodoro_instance']
         current_config = pomodoro_instance.get_config_status()
         await query.edit_message_text(
@@ -519,6 +565,15 @@ class Pomodoro:
 
         try:
             value = int(update.message.text)
+            # Adicione esta verificação aqui!
+            if 'pomodoro_instance' not in context.user_data:
+                context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
+                await update.message.reply_text(
+                    "Ops! Tive que iniciar seu Pomodoro. Por favor, tente novamente a ação desejada. 🚀",
+                    reply_markup=self._get_pomodoro_menu_keyboard()
+                )
+                return self.POMODORO_MENU_STATE
+
             pomodoro_instance = context.user_data['pomodoro_instance'] # Obtém a instância do Pomodoro
             success, message = await pomodoro_instance.configurar(config_type, value)
             if success:
@@ -588,6 +643,16 @@ class Pomodoro:
 
     async def _fallback_pomodoro_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Lida com mensagens de texto inesperadas dentro do fluxo do Pomodoro."""
+        # Adicione esta verificação aqui!
+        if 'pomodoro_instance' not in context.user_data:
+            context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
+            # Ao invés de retornar, continuamos para tentar exibir o teclado.
+            await update.message.reply_text(
+                "Ops! Tive que iniciar seu Pomodoro. Por favor, tente novamente a ação desejada. 🚀",
+                reply_markup=self._get_pomodoro_menu_keyboard()
+            )
+            return self.POMODORO_MENU_STATE # Volta ao menu Pomodoro
+
         # Tenta obter a instância do Pomodoro para pegar o teclado correto
         pomodoro_instance = context.user_data.get('pomodoro_instance', self) # fallback para self se não encontrar
         keyboard = pomodoro_instance._get_pomodoro_menu_keyboard() if hasattr(pomodoro_instance, '_get_pomodoro_menu_keyboard') else None
