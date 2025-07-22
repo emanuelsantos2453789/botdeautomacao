@@ -10,10 +10,11 @@ from telegram.ext import (
 )
 
 from handlers.pomodoro import Pomodoro
-from handlers.metas import get_metas_conversation_handler, start_metas_menu # Importe as funções e o handler de metas
-
-# --- NOVO: Importa a classe Agenda do módulo 'handlers/agenda.py' ---
+from handlers.metas import get_metas_conversation_handler, start_metas_menu 
 from handlers.agenda import Agenda
+
+# --- NOVO: Importa a classe RotinasSemanais do novo módulo ---
+from handlers.rotina_pr import RotinasSemanais
 
 # --- 1. Your Bot Token ---
 TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" 
@@ -28,8 +29,10 @@ def get_main_menu_keyboard():
     """Retorna o teclado do menu principal do bot."""
     keyboard = [
         [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
-        [InlineKeyboardButton("🎯 Metas Semanaais", callback_data="open_metas_menu")], # Novo botão para Metas
-        [InlineKeyboardButton("🗓️ Agenda", callback_data="open_agenda_menu")], #AGENDA
+        [InlineKeyboardButton("🎯 Metas Semanaais", callback_data="open_metas_menu")],
+        [InlineKeyboardButton("🗓️ Agenda", callback_data="open_agenda_menu")],
+        # --- NOVO: Botão para Rotinas Semanais ---
+        [InlineKeyboardButton("📅 Rotinas Semanais", callback_data="open_rotinas_semanais_menu")], 
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -50,17 +53,12 @@ async def open_pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer("Abrindo Pomodoro... ⏳")
 
-    # Obtém a instância do Pomodoro para este usuário, ou cria uma nova se não existir
-    # A instância Pomodoro agora é armazenada diretamente em context.user_data
     if 'pomodoro_instance' not in context.user_data:
-        # Passa o bot e o chat_id no momento da criação da instância
         context.user_data['pomodoro_instance'] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
     else:
-        # Se a instância já existe, atualiza bot e chat_id caso tenham mudado
         context.user_data['pomodoro_instance'].bot = context.bot
         context.user_data['pomodoro_instance'].chat_id = update.effective_chat.id
-    
-    # Delega para o handler da instância Pomodoro para exibir seu menu
+        
     pomodoro_instance = context.user_data['pomodoro_instance']
     return await pomodoro_instance._show_pomodoro_menu(update, context)
 
@@ -72,10 +70,9 @@ async def open_metas_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     query = update.callback_query
     await query.answer("Abrindo Metas Semanais... 🎯")
-    return await start_metas_menu(update, context) # Mantido como estava no seu código original
+    return await start_metas_menu(update, context)
 
 
-# --- NOVO: Handler para abrir o menu da Agenda ---
 async def open_agenda_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handler para o botão 'Agenda' no menu principal.
@@ -84,16 +81,39 @@ async def open_agenda_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("Abrindo Agenda... 🗓️")
     
-    # Cria uma instância da classe Agenda, passando o bot e chat_id para notificações
-    agenda_instance = Agenda(bot=context.bot, chat_id=update.effective_chat.id)
-    # Chama o handler de entrada do ConversationHandler da Agenda
+    if 'agenda_instance' not in context.user_data:
+        context.user_data['agenda_instance'] = Agenda(bot=context.bot, chat_id=update.effective_chat.id)
+    else:
+        context.user_data['agenda_instance'].bot = context.bot
+        context.user_data['agenda_instance'].chat_id = update.effective_chat.id
+
+    agenda_instance = context.user_data['agenda_instance']
     return await agenda_instance.start_agenda_menu(update, context)
+
+# --- NOVO: Handler para abrir o menu de Rotinas Semanais ---
+async def open_rotinas_semanais_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handler para o botão 'Rotinas Semanais' no menu principal.
+    Cria uma instância da classe RotinasSemanais e delega para seu handler de início.
+    """
+    query = update.callback_query
+    await query.answer("Abrindo Rotinas Semanais... 📅")
+    
+    if 'rotinas_semanais_instance' not in context.user_data:
+        context.user_data['rotinas_semanais_instance'] = RotinasSemanais(bot=context.bot, chat_id=update.effective_chat.id)
+    else:
+        context.user_data['rotinas_semanais_instance'].bot = context.bot
+        context.user_data['rotinas_semanais_instance'].chat_id = update.effective_chat.id
+
+    rotinas_instance = context.user_data['rotinas_semanais_instance']
+    return await rotinas_instance.start_rotinas_menu(update, context)
 
 
 async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handler para o callback 'main_menu_return'.
-    Acionado quando o ConversationHandler do Pomodoro, Metas ou Agenda retorna ConversationHandler.END.
+    Acionado quando o ConversationHandler do Pomodoro, Metas, Agenda ou Rotinas Semanais
+    retorna ConversationHandler.END.
     """
     query = update.callback_query
     await query.edit_message_text(
@@ -128,22 +148,28 @@ def main():
     """Configura e inicia o bot."""
     application = Application.builder().token(TOKEN).build()
 
-    # Cria uma instância dummy da classe Pomodoro apenas para obter a estrutura do handler.
-    temp_pomodoro_instance_for_handler_setup = Pomodoro() 
+    temp_pomodoro_instance_for_handler_setup = Pomodoro() # Instância dummy para handler Pomodoro
+    temp_agenda_instance_for_handler_setup = Agenda() # Instância dummy para handler Agenda
+    # --- NOVO: Instância dummy para handler de Rotinas Semanais ---
+    temp_rotinas_semanais_instance_for_handler_setup = RotinasSemanais() 
 
-    # --- NOVO: Cria uma instância dummy da classe Agenda ---
-    temp_agenda_instance_for_handler_setup = Agenda()
 
     main_conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_command)],
         states={
             MAIN_MENU_STATE: [
-                # O ConversationHandler do Pomodoro é aninhado aqui
+                CallbackQueryHandler(open_pomodoro_menu, pattern="^open_pomodoro_menu$"),
+                CallbackQueryHandler(open_metas_menu, pattern="^open_metas_menu$"),
+                CallbackQueryHandler(open_agenda_menu, pattern="^open_agenda_menu$"),
+                # --- NOVO: Adiciona o CallbackQueryHandler para Rotinas Semanais ---
+                CallbackQueryHandler(open_rotinas_semanais_menu, pattern="^open_rotinas_semanais_menu$"),
+
+                # Aninha os ConversationHandlers de cada funcionalidade
                 temp_pomodoro_instance_for_handler_setup.get_pomodoro_conversation_handler(),
-                # Novo: O ConversationHandler das Metas é aninhado aqui
-                get_metas_conversation_handler(), # Chama a função que retorna o ConversationHandler de metas
-                # --- NOVO: O ConversationHandler da Agenda é aninhado aqui ---
+                get_metas_conversation_handler(), 
                 temp_agenda_instance_for_handler_setup.get_agenda_conversation_handler(),
+                # --- NOVO: Aninha o ConversationHandler de Rotinas Semanais ---
+                temp_rotinas_semanais_instance_for_handler_setup.get_rotinas_semanais_conversation_handler(),
             ],
         },
         fallbacks=[
