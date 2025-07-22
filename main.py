@@ -112,7 +112,7 @@ async def open_rotinas_semanais_menu(update: Update, context: ContextTypes.DEFAU
 async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handler para o callback 'main_menu_return'.
-    Acionado quando o ConversationHandler do Pomodoro, Metas, Agenda ou Rotinas Semanais
+    Acionado quando o ConversationHandler do Pomodoro, Metas, Agenda ou Rotinas Semanaais
     retorna ConversationHandler.END.
     """
     query = update.callback_query
@@ -146,7 +146,8 @@ async def fallback_global(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Configura e inicia o bot."""
-    application = Application.builder().token(TOKEN).build()
+    # AQUI FOI ALTERADO: 'on_init' é um parâmetro de .builder().build()
+    application = Application.builder().token(TOKEN).post_init(start_all_scheduled_jobs).build()
 
     temp_pomodoro_instance_for_handler_setup = Pomodoro()
     temp_agenda_instance_for_handler_setup = Agenda()
@@ -182,8 +183,8 @@ def main():
     ))
 
     print("Bot rodando... ✨")
-    # AQUI FOI ALTERADO: 'on_startup' para 'on_init'
-    application.run_polling(poll_interval=1.0, on_init=start_all_scheduled_jobs)
+    # run_polling não tem mais 'on_init'
+    application.run_polling(poll_interval=1.0)
 
 if __name__ == "__main__":
     main()
