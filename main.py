@@ -10,79 +10,68 @@ from telegram.ext import (
     filters
 )
 
-from handlers.pomodoro import Pomodoro # Importa a classe Pomodoro
+from handlers.pomodoro import Pomodoro 
 
-# --- 1. Seu Token do Bot ---
-TOKEN = "7677783341:AAFiCgEdkcaV_V03y_CZo2L2_F_NHGwlN54" # <-- ATUALIZE ESTE TOKEN!
+# --- 1. Your Bot Token ---
+TOKEN = "SEU_NOVO_TOKEN_AQUI_OBTIDO_DO_BOTFATHER" # <-- REMEMBER TO UPDATE THIS!
 
-# Dicionário para armazenar uma instância de Pomodoro para cada usuário
-# Isso garante que cada usuário tenha suas próprias configurações e estado do Pomodoro.
+# Dictionary to store a Pomodoro instance for each user
 user_pomodoros = {}
 
-# --- Estados da Conversa Global (do bot principal) ---
+# --- Global Conversation States (of the main bot) ---
 MAIN_MENU_STATE = 0
 
 
-# --- Funções Auxiliares para o Bot Principal ---
+# --- Helper Functions for the Main Bot ---
 
 def get_main_menu_keyboard():
-    """Retorna o teclado do menu principal do bot."""
+    """Returns the main bot menu keyboard."""
     keyboard = [
         [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
-        # Adicione outros botões de menu principal aqui, se tiver
-        # Ex: [InlineKeyboardButton("📝 Tarefas", callback_data="open_tasks_menu")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Responde ao comando /start e mostra o menu principal do bot."""
+    """Responds to the /start command and displays the main bot menu."""
     await update.message.reply_text(
         "Olá! Eu sou seu bot de produtividade. Escolha uma opção e vamos começar! ✨",
         reply_markup=get_main_menu_keyboard()
     )
-    return MAIN_MENU_STATE # Define o estado inicial da conversa como o menu principal
+    return MAIN_MENU_STATE
 
 async def open_pomodoro_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handler para o botão 'Pomodoro' no menu principal.
-    Responsável por inicializar a instância do Pomodoro para o usuário
-    e passar o controle para o ConversationHandler do Pomodoro.
+    Handler for the 'Pomodoro' button in the main menu.
+    Responsible for initializing the Pomodoro instance for the user
+    and passing control to the Pomodoro ConversationHandler.
     """
     query = update.callback_query
-    await query.answer("Abrindo Pomodoro... ⏳") # Responde a query aqui antes de editar
+    await query.answer("Abrindo Pomodoro... ⏳")
 
     user_id = update.effective_user.id
     if user_id not in user_pomodoros:
-        # Cria uma instância de Pomodoro para o usuário, passando o bot e o chat_id
-        # IMPORTANTE: Passa o bot do contexto que tem o loop de eventos.
         user_pomodoros[user_id] = Pomodoro(bot=context.bot, chat_id=update.effective_chat.id)
     
-    # Chama o método que mostra o menu do Pomodoro.
-    # O retorno de _show_pomodoro_menu é o estado POMODORO_MENU_STATE.
-    # Ao retornar este estado do handler do entry_point do ConversationHandler aninhado,
-    # o ConversationHandler principal "muda" para o estado que corresponde ao sub-ConversationHandler.
     return await user_pomodoros[user_id]._show_pomodoro_menu(update, context)
 
 
 async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handler para o callback 'main_menu_return'.
-    É acionado quando o ConversationHandler do Pomodoro retorna ConversationHandler.END
-    e o `map_to_parent` direciona para cá.
+    Handler for the 'main_menu_return' callback.
+    Triggered when the Pomodoro ConversationHandler returns ConversationHandler.END.
     """
     query = update.callback_query
-    # A resposta à query já foi dada no _exit_pomodoro_conversation no pomodoro.py
     await query.edit_message_text(
         "De volta ao menu principal. Escolha uma opção: ✨",
         reply_markup=get_main_menu_keyboard()
     )
-    return MAIN_MENU_STATE # Retorna ao estado do menu principal do bot
+    return MAIN_MENU_STATE
 
 
 async def fallback_global(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handler de fallback global para mensagens ou callbacks não esperados
-    em qualquer estado da conversa principal.
+    Global fallback handler for unexpected messages or callbacks
+    in any state of the main conversation.
     """
     if update.message:
         await update.message.reply_text(
@@ -95,36 +84,26 @@ async def fallback_global(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Ação inválida. Escolha uma opção: 🧐",
             reply_markup=get_main_menu_keyboard()
         )
-    return MAIN_MENU_STATE # Tenta retornar ao estado do menu principal
+    return MAIN_MENU_STATE
 
 
-# --- Função Principal para Iniciar o Bot ---
+# --- Main Function to Start the Bot ---
 
 def main():
-    """Configura e inicia o bot."""
+    """Configures and starts the bot."""
     application = Application.builder().token(TOKEN).build()
 
-    # Cria uma instância temporária de Pomodoro apenas para obter o ConversationHandler.
-    # A instância real para cada usuário é criada e gerenciada em user_pomodoros.
-    # Não passe bot/chat_id aqui, pois esta é apenas uma instância para configuração.
     temp_pomodoro_instance = Pomodoro() 
 
-    # Constrói o ConversationHandler para o fluxo principal do bot.
     main_conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_command)],
         states={
             MAIN_MENU_STATE: [
-                # Quando o usuário clica em 'open_pomodoro_menu', ele entra na sub-conversação do Pomodoro.
                 temp_pomodoro_instance.get_pomodoro_conversation_handler(),
             ],
-            # Outros estados para outros menus principais podem ser adicionados aqui no futuro.
         },
         fallbacks=[
-            # Este fallback captura o CallbackQuery "main_menu_return" que o Pomodoro envia
-            # quando sua conversa aninhada retorna ConversationHandler.END.
-            # Ele então chama return_to_main_menu para exibir o menu principal novamente.
             CallbackQueryHandler(return_to_main_menu, pattern="^main_menu_return$"),
-            # Fallback geral para qualquer outra mensagem ou comando não tratado
             MessageHandler(filters.ALL & ~filters.COMMAND, fallback_global),
         ],
     )
@@ -132,8 +111,7 @@ def main():
     application.add_handler(main_conversation_handler)
 
     print("Bot rodando... Pressione Ctrl+C para parar. ✨")
-    application.run_polling(poll_interval=1.0) # Adicionado poll_interval para melhor controle
+    application.run_polling(poll_interval=1.0)
 
-# --- Ponto de Entrada do Script ---
 if __name__ == "__main__":
     main()
