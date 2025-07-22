@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 
 from handlers.pomodoro import Pomodoro
-from metas import get_metas_conversation_handler, start_metas_menu # Importe as funções e o handler de metas
+from handlers.metas import get_metas_conversation_handler, start_metas_menu # Importe as funções e o handler de metas
 
 # --- NOVO: Importa a classe Agenda do módulo 'handlers/agenda.py' ---
 from handlers.agenda import Agenda
