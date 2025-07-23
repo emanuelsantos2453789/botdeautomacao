@@ -3,89 +3,107 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OrganizaAção 🚀 - Seu Painel de Controle Futurista</title>
-    
+    <title>OrganizaAção 🚀 - Seu Painel de Comando Hi-Tech</title>
+
     <link rel="stylesheet" href="style.css">
-    
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="background-animation-layer"></div>
+    <div class="background-glow-layer"></div>
 
     <div class="app-main-panel">
         <header class="panel-header">
-            <h1 class="app-title">OrganizaAção <span>🚀</span></h1>
-            <p class="app-slogan">Seu Universo de Produtividade em Suas Mãos.</p>
+            <h1 class="app-title">OrganizaAção <span>✨</span></h1>
+            <p class="app-slogan">Seu Universo de Produtividade em Tempo Real.</p>
         </header>
 
         <div class="content-area">
             <section id="dashboard" class="content-section active theme-dashboard">
-                <h2 class="section-title">Dashboard <span>📊</span></h2>
-                <p class="section-description">Visão geral e seus atalhos mais importantes.</p>
+                <h2 class="section-title">Dashboard <span class="title-icon">📊</span></h2>
+                <p class="section-description">Sua Central de Comando Pessoal. Tudo sob controle.</p>
                 <div class="dashboard-grid">
-                    <div class="widget glow-border pomodoro-widget">
-                        <h3>Pomodoro Rápido <span class="widget-icon">⏱️</span></h3>
-                        <p>Foco atual: 25:00</p>
-                        <button class="btn btn-primary">Iniciar Foco</button>
+                    <div class="widget glow-on-hover pomodoro-widget">
+                        <h3>Foco Quântico <span class="widget-icon">⏱️</span></h3>
+                        <p>Estado: Ocioso</p>
+                        <p>Próximo: Foco (25:00)</p>
+                        <button class="btn btn-primary">Iniciar Sequência</button>
                     </div>
-                    <div class="widget glow-border metas-widget">
-                        <h3>Metas do Dia <span class="widget-icon">🎯</span></h3>
-                        <p>2/5 Metas Concluídas</p>
-                        <button class="btn btn-secondary">Ver Metas</button>
+                    <div class="widget glow-on-hover metas-widget">
+                        <h3>Metas Estelares <span class="widget-icon">🎯</span></h3>
+                        <p>Concluir Relatório Alfa - Pendente</p>
+                        <p>Responder 5 Comms - Concluído ✅</p>
+                        <button class="btn btn-secondary">Acessar Metas</button>
                     </div>
+                    <div class="widget glow-on-hover status-widget">
+                        <h3>Status da Missão <span class="widget-icon">📡</span></h3>
+                        <p>Produtividade hoje: 75%</p>
+                        <p>Tarefas pendentes: 3</p>
+                        <button class="btn btn-info">Ver Relatório Detalhado</button>
                     </div>
+                     <div class="widget glow-on-hover events-widget">
+                        <h3>Próximo Evento <span class="widget-icon">📅</span></h3>
+                        <p>Reunião com Equipe Delta</p>
+                        <p>Local: Sala de Simulações</p>
+                        <button class="btn btn-primary">Ver Agenda Completa</button>
+                    </div>
+                </div>
             </section>
 
             <section id="pomodoro" class="content-section hidden theme-pomodoro">
-                <h2 class="section-title">Pomodoro <span>🍅</span></h2>
-                <p class="section-description">Mantenha o foco e gerencie seu tempo.</p>
+                <h2 class="section-title">Pomodoro <span class="title-icon">🍅</span></h2>
+                <p class="section-description">Calibre seu foco. Domine seu tempo.</p>
                 <div class="pomodoro-interface">
                     <div class="timer-display">
                         <div class="timer-circle">
+                            <svg class="timer-progress-ring" width="200" height="200">
+                                <circle class="progress-ring-track" stroke-width="8" fill="transparent" r="90" cx="100" cy="100"/>
+                                <circle class="progress-ring-fill" stroke-width="8" fill="transparent" r="90" cx="100" cy="100" style="stroke-dasharray: 565.48; stroke-dashoffset: 565.48;"/>
+                            </svg>
                             <span class="time-value">25:00</span>
                         </div>
                     </div>
-                    <div class="timer-status">Foco Ativo</div>
+                    <div class="timer-status">Pronto para Focar</div>
                     <div class="pomodoro-controls">
-                        <button class="btn btn-control btn-start">Iniciar ▶️</button>
-                        <button class="btn btn-control btn-pause">Pausar ⏸️</button>
-                        <button class="btn btn-control btn-reset">Redefinir 🔄</button>
-                        <button class="btn btn-control btn-skip">Pular ⏭️</button>
+                        <button class="btn btn-control btn-start"><span class="material-icons">play_arrow</span> Iniciar</button>
+                        <button class="btn btn-control btn-pause"><span class="material-icons">pause</span> Pausar</button>
+                        <button class="btn btn-control btn-reset"><span class="material-icons">replay</span> Redefinir</button>
+                        <button class="btn btn-control btn-skip"><span class="material-icons">skip_next</span> Pular</button>
                     </div>
                 </div>
             </section>
 
             <section id="metas" class="content-section hidden theme-metas">
-                <h2 class="section-title">Minhas Metas <span>🏆</span></h2>
-                <p class="section-description">Acompanhe e celebre suas conquistas.</p>
-                <button class="btn btn-primary">Adicionar Nova Meta ➕</button>
+                <h2 class="section-title">Metas <span class="title-icon">🎯</span></h2>
+                <p class="section-description">Suas grandes conquistas, passo a passo.</p>
+                <button class="btn btn-primary">Adicionar Nova Meta <span class="material-icons">add</span></button>
             </section>
 
             <section id="agenda" class="content-section hidden theme-agenda">
-                <h2 class="section-title">Agenda <span>🗓️</span></h2>
-                <p class="section-description">Organize seus compromissos e eventos.</p>
-                <button class="btn btn-primary">Novo Evento ➕</button>
+                <h2 class="section-title">Agenda <span class="title-icon">🗓️</span></h2>
+                <p class="section-description">Seus compromissos. Seu tempo. Sua vitória.</p>
+                <button class="btn btn-primary">Novo Evento <span class="material-icons">event</span></button>
             </section>
 
             <section id="rotinas" class="content-section hidden theme-rotinas">
-                <h2 class="section-title">Minhas Rotinas <span>🌿</span></h2>
-                <p class="section-description">Construa hábitos poderosos, um dia de cada vez.</p>
-                <button class="btn btn-primary">Nova Rotina ➕</button>
+                <h2 class="section-title">Rotinas <span class="title-icon">🔄</span></h2>
+                <p class="section-description">Automação de hábitos. Eficiência contínua.</p>
+                <button class="btn btn-primary">Nova Rotina <span class="material-icons">add_circle_outline</span></button>
             </section>
 
             <section id="relatorios" class="content-section hidden theme-relatorios">
-                <h2 class="section-title">Relatórios <span>📊</span></h2>
-                <p class="section-description">Visualize seu progresso e identifique padrões.</p>
-                <button class="btn btn-info">Gerar Relatório</button>
+                <h2 class="section-title">Relatórios <span class="title-icon">📈</span></h2>
+                <p class="section-description">Análise de dados. Otimização de desempenho.</p>
+                <button class="btn btn-info">Gerar Relatório <span class="material-icons">assessment</span></button>
             </section>
 
             <section id="configuracoes" class="content-section hidden theme-configuracoes">
-                <h2 class="section-title">Configurações <span>⚙️</span></h2>
-                <p class="section-description">Personalize sua experiência "OrganizaAção".</p>
-                <button class="btn btn-secondary">Salvar Ajustes</button>
+                <h2 class="section-title">Configurações <span class="title-icon">⚙️</span></h2>
+                <p class="section-description">Ajuste fino do seu sistema de produtividade.</p>
+                <button class="btn btn-secondary">Salvar Ajustes <span class="material-icons">save</span></button>
             </section>
 
         </div>
@@ -93,24 +111,27 @@
         <nav class="bottom-nav">
             <ul>
                 <li><a href="#" data-section="dashboard" class="nav-item active">
-                    <span class="nav-icon">🏠</span><span class="nav-text">Home</span>
+                    <span class="nav-icon material-icons">dashboard</span><span class="nav-text">Home</span>
                 </a></li>
                 <li><a href="#" data-section="pomodoro" class="nav-item">
-                    <span class="nav-icon">⏱️</span><span class="nav-text">Foco</span>
+                    <span class="nav-icon material-icons">timer</span><span class="nav-text">Foco</span>
                 </a></li>
                 <li><a href="#" data-section="metas" class="nav-item">
-                    <span class="nav-icon">🎯</span><span class="nav-text">Metas</span>
+                    <span class="nav-icon material-icons">emoji_events</span><span class="nav-text">Metas</span>
                 </a></li>
                 <li><a href="#" data-section="agenda" class="nav-item">
-                    <span class="nav-icon">🗓️</span><span class="nav-text">Agenda</span>
+                    <span class="nav-icon material-icons">calendar_month</span><span class="nav-text">Agenda</span>
                 </a></li>
                 <li><a href="#" data-section="rotinas" class="nav-item">
-                    <span class="nav-icon">🔄</span><span class="nav-text">Rotinas</span>
+                    <span class="nav-icon material-icons">autorenew</span><span class="nav-text">Rotinas</span>
                 </a></li>
             </ul>
         </nav>
     </div>
 
+    <div id="notification-container"></div>
+
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <script src="script.js"></script>
 </body>
 </html>
