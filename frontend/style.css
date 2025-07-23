@@ -1,1 +1,36 @@
+/* frontend/style.css */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f0f2f5;
+    color: #333;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
 
+header {
+    background-color: #4CAF50;
+    color: white;
+    padding: 1em 0;
+    width: 100%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+main {
+    flex: 1;
+    padding: 2em;
+}
+
+footer {
+    background-color: #333;
+    color: white;
+    padding: 1em 0;
+    width: 100%;
+    position: relative;
+    bottom: 0;
+}
