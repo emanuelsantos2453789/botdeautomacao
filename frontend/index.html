@@ -3,111 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OrganizaAção 🛠️ - Seu Hub de Produtividade</title>
+    <title>OrganizaAção 🚀 - Seu Painel de Controle Futurista</title>
     
     <link rel="stylesheet" href="style.css">
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="app-container">
-        <aside class="sidebar">
-            <div class="app-logo">
-                <h1>OrganizaAção 🛠️</h1>
-            </div>
-            <nav class="main-nav">
-                <ul>
-                    <li><a href="#" data-section="dashboard">📊 Dashboard</a></li>
-                    <li><a href="#" data-section="pomodoro">🍅 Pomodoro</a></li>
-                    <li><a href="#" data-section="metas">🎯 Metas</a></li>
-                    <li><a href="#" data-section="agenda">🗓️ Agenda</a></li>
-                    <li><a href="#" data-section="rotinas">🔄 Rotinas</a></li>
-                    <li><a href="#" data-section="relatorios">📈 Relatórios</a></li>
-                    <li><a href="#" data-section="configuracoes">⚙️ Configurações</a></li>
-                </ul>
-            </nav>
-        </aside>
+    <div class="background-animation-layer"></div>
 
-        <main class="main-content">
-            <header class="main-header">
-                <h2>Bem-vindo de volta! ✨</h2>
-                <p>Seu espaço para organizar e conquistar o dia.</p>
-            </header>
+    <div class="app-main-panel">
+        <header class="panel-header">
+            <h1 class="app-title">OrganizaAção <span>🚀</span></h1>
+            <p class="app-slogan">Seu Universo de Produtividade em Suas Mãos.</p>
+        </header>
 
-            <section id="dashboard" class="content-section active">
-                <h3>Seu Dashboard de Produtividade 🚀</h3>
+        <div class="content-area">
+            <section id="dashboard" class="content-section active theme-dashboard">
+                <h2 class="section-title">Dashboard <span>📊</span></h2>
+                <p class="section-description">Visão geral e seus atalhos mais importantes.</p>
                 <div class="dashboard-grid">
-                    <div class="card pomodoro-widget">
-                        <h4>Pomodoro Rápido ⏱️</h4>
-                        <p>Estado: Ocioso</p>
-                        <p>Próximo: Foco (25:00)</p>
-                        <button class="btn btn-primary">Iniciar Foco ▶️</button>
+                    <div class="widget glow-border pomodoro-widget">
+                        <h3>Pomodoro Rápido <span class="widget-icon">⏱️</span></h3>
+                        <p>Foco atual: 25:00</p>
+                        <button class="btn btn-primary">Iniciar Foco</button>
                     </div>
-
-                    <div class="card metas-widget">
-                        <h4>Suas Metas Diárias 🎯</h4>
-                        <p>Concluir relatório X - Pendente</p>
-                        <p>Responder 5 emails - Concluído ✅</p>
-                        <button class="btn btn-secondary">Ver Todas as Metas</button>
+                    <div class="widget glow-border metas-widget">
+                        <h3>Metas do Dia <span class="widget-icon">🎯</span></h3>
+                        <p>2/5 Metas Concluídas</p>
+                        <button class="btn btn-secondary">Ver Metas</button>
                     </div>
-
                     </div>
             </section>
 
-            <section id="pomodoro" class="content-section hidden">
-                <h3>Seu Pomodoro Personalizado 🍅</h3>
-                <div class="pomodoro-timer">
-                    <div class="timer-display">25:00</div>
-                    <div class="timer-status">Foco</div>
+            <section id="pomodoro" class="content-section hidden theme-pomodoro">
+                <h2 class="section-title">Pomodoro <span>🍅</span></h2>
+                <p class="section-description">Mantenha o foco e gerencie seu tempo.</p>
+                <div class="pomodoro-interface">
+                    <div class="timer-display">
+                        <div class="timer-circle">
+                            <span class="time-value">25:00</span>
+                        </div>
+                    </div>
+                    <div class="timer-status">Foco Ativo</div>
+                    <div class="pomodoro-controls">
+                        <button class="btn btn-control btn-start">Iniciar ▶️</button>
+                        <button class="btn btn-control btn-pause">Pausar ⏸️</button>
+                        <button class="btn btn-control btn-reset">Redefinir 🔄</button>
+                        <button class="btn btn-control btn-skip">Pular ⏭️</button>
+                    </div>
                 </div>
-                <div class="pomodoro-controls">
-                    <button class="btn btn-primary">Iniciar ▶️</button>
-                    <button class="btn btn-secondary">Pausar ⏸️</button>
-                    <button class="btn btn-danger">Parar ⏹️</button>
-                    <button class="btn btn-info">Pular ⏭️</button>
-                </div>
-                <div class="pomodoro-configs">
-                    <button class="btn btn-link">⚙️ Configurações</button>
-                </div>
-                <p style="margin-top: 2em; color: var(--color-text-medium);">
-                    *O brilho do temporizador pulsa quando você está focado. 💡
-                </p>
             </section>
 
-            <section id="metas" class="content-section hidden">
-                <h3>Minhas Metas 🎯</h3>
-                <p>Aqui você poderá definir e acompanhar suas metas com brilho.</p>
+            <section id="metas" class="content-section hidden theme-metas">
+                <h2 class="section-title">Minhas Metas <span>🏆</span></h2>
+                <p class="section-description">Acompanhe e celebre suas conquistas.</p>
                 <button class="btn btn-primary">Adicionar Nova Meta ➕</button>
             </section>
 
-            <section id="agenda" class="content-section hidden">
-                <h3>Minha Agenda 🗓️</h3>
-                <p>Gerencie seus eventos e compromissos com precisão.</p>
-                <button class="btn btn-primary">Novo Evento 🗓️</button>
+            <section id="agenda" class="content-section hidden theme-agenda">
+                <h2 class="section-title">Agenda <span>🗓️</span></h2>
+                <p class="section-description">Organize seus compromissos e eventos.</p>
+                <button class="btn btn-primary">Novo Evento ➕</button>
             </section>
 
-            <section id="rotinas" class="content-section hidden">
-                <h3>Minhas Rotinas 🔄</h3>
-                <p>Crie e mantenha seus hábitos que transformam.</p>
+            <section id="rotinas" class="content-section hidden theme-rotinas">
+                <h2 class="section-title">Minhas Rotinas <span>🌿</span></h2>
+                <p class="section-description">Construa hábitos poderosos, um dia de cada vez.</p>
                 <button class="btn btn-primary">Nova Rotina ➕</button>
             </section>
 
-            <section id="relatorios" class="content-section hidden">
-                <h3>Relatórios de Produtividade 📈</h3>
-                <p>Visualize seu progresso ao longo do tempo com insights claros.</p>
-                <button class="btn btn-info">Gerar Relatório 📊</button>
+            <section id="relatorios" class="content-section hidden theme-relatorios">
+                <h2 class="section-title">Relatórios <span>📊</span></h2>
+                <p class="section-description">Visualize seu progresso e identifique padrões.</p>
+                <button class="btn btn-info">Gerar Relatório</button>
             </section>
 
-            <section id="configuracoes" class="content-section hidden">
-                <h3>Configurações do App ⚙️</h3>
-                <p>Ajuste seu universo de produtividade aqui.</p>
-                <button class="btn btn-secondary">Salvar Configurações ✅</button>
+            <section id="configuracoes" class="content-section hidden theme-configuracoes">
+                <h2 class="section-title">Configurações <span>⚙️</span></h2>
+                <p class="section-description">Personalize sua experiência "OrganizaAção".</p>
+                <button class="btn btn-secondary">Salvar Ajustes</button>
             </section>
 
-        </main>
+        </div>
+
+        <nav class="bottom-nav">
+            <ul>
+                <li><a href="#" data-section="dashboard" class="nav-item active">
+                    <span class="nav-icon">🏠</span><span class="nav-text">Home</span>
+                </a></li>
+                <li><a href="#" data-section="pomodoro" class="nav-item">
+                    <span class="nav-icon">⏱️</span><span class="nav-text">Foco</span>
+                </a></li>
+                <li><a href="#" data-section="metas" class="nav-item">
+                    <span class="nav-icon">🎯</span><span class="nav-text">Metas</span>
+                </a></li>
+                <li><a href="#" data-section="agenda" class="nav-item">
+                    <span class="nav-icon">🗓️</span><span class="nav-text">Agenda</span>
+                </a></li>
+                <li><a href="#" data-section="rotinas" class="nav-item">
+                    <span class="nav-icon">🔄</span><span class="nav-text">Rotinas</span>
+                </a></li>
+            </ul>
+        </nav>
     </div>
 
     <script src="script.js"></script>
