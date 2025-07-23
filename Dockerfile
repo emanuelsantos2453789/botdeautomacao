@@ -7,8 +7,8 @@ WORKDIR /app
 
 # Copia o arquivo de requisitos e instala as dependências
 # Isso aproveita o cache do Docker: se requirements.txt não mudar, não reinstala
-COPY backend/requeriments.txt .
-RUN pip install --no-cache-dir -r requeriments.txt
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia todo o restante do seu código para o diretório de trabalho
 COPY . .
