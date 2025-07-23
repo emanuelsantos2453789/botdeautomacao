@@ -1,123 +1,160 @@
+
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OrganizaAção 🛠️ - Sistema Supremo</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrganizaAção 🛠️ - Seu Hub de Produtividade</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="app-container">
-        <aside class="sidebar">
-            <div class="app-logo">
-                <h1>OrganizaAção 🛠️</h1>
-            </div>
-            <nav class="main-nav">
-                <ul>
-                    <li><a href="#" data-section="dashboard" class="active">📊 Dashboard</a></li>
-                    <li><a href="#" data-section="pomodoro">🍅 Pomodoro</a></li>
-                    <li><a href="#" data-section="metas">🎯 Metas</a></li>
-                    <li><a href="#" data-section="agenda">📆 Agenda</a></li>
-                    <li><a href="#" data-section="rotinas">🔁 Rotinas</a></li>
-                    <li><a href="#" data-section="relatorios">📈 Relatórios</a></li>
-                    <li><a href="#" data-section="configuracoes">⚙️ Configurações</a></li>
-                </ul>
-            </nav>
-        </aside>
+  <div class="app-container">
+    <aside class="sidebar">
+      <div class="app-logo"><h1>OrganizaAção 🛠️</h1></div>
+      <nav class="main-nav">
+        <ul>
+          <li><a href="dashboard.html">📊 Dashboard</a></li>
+          <li><a href="pomodoro.html">🍅 Pomodoro</a></li>
+          <li><a href="metas.html">🎯 Metas</a></li>
+          <li><a href="agenda.html">📆 Agenda</a></li>
+          <li><a href="rotinas.html">🔁 Rotinas</a></li>
+          <li><a href="relatorios.html">📈 Relatórios</a></li>
+          <li><a href="configuracoes.html">⚙️ Configurações</a></li>
+        </ul>
+      </nav>
+    </aside>
+    <main class="main-content">
+      <h2>Bem-vindo ao OrganizaAção!</h2>
+      <p>Selecione uma função no menu para navegar.</p>
+    </main>
+  </div>
+</body>
+</html>
 
-        <main class="main-content">
-            <!-- DASHBOARD -->
-            <section id="dashboard" class="section active">
-                <h2>📊 Painel Geral</h2>
-                <div class="cards">
-                    <div class="card">Tarefas concluídas: <strong>12</strong></div>
-                    <div class="card">Tempo focado: <strong>5h 40min</strong></div>
-                    <div class="card">Metas ativas: <strong>4</strong></div>
-                </div>
-            </section>
+<!-- dashboard.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - OrganizaAção</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <aside class="sidebar"> … /* mesmo sidebar */ … </aside>
+    <main class="main-content">
+      <h2>📊 Dashboard</h2>
+      <div class="cards">
+        <div class="card animate">Tarefas concluídas: <strong>12</strong></div>
+        <div class="card animate delay-1">Tempo focado: <strong>5h 40min</strong></div>
+        <div class="card animate delay-2">Metas ativas: <strong>4</strong></div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
 
-            <!-- POMODORO -->
-            <section id="pomodoro" class="section">
-                <h2>🍅 Pomodoro Supreme</h2>
-                <div class="pomodoro-card">
-                    <div class="timer-display" id="timerDisplay">25:00</div>
-                    <div class="timer-status" id="timerStatus">Foco</div>
-                    <div class="pomodoro-controls">
-                        <button class="btn btn-start" id="startBtn">Iniciar ▶️</button>
-                        <button class="btn btn-pause" id="pauseBtn">Pausar ⏸️</button>
-                        <button class="btn btn-stop" id="stopBtn">Parar ⏹️</button>
-                        <button class="btn btn-skip" id="skipBtn">Pular ⏭️</button>
-                    </div>
-                </div>
-            </section>
+<!-- pomodoro.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>… mesma head com title e style …</head>
+<body>
+  <div class="app-container">
+    <aside class="sidebar"> … </aside>
+    <main class="main-content">
+      <h2>🍅 Pomodoro Supreme</h2>
+      <div class="pomodoro-card animate">
+        <div class="timer-display" id="timerDisplay">25:00</div>
+        <div class="timer-status" id="timerStatus">Foco</div>
+        <div class="pomodoro-controls">
+          <button id="startBtn">Iniciar</button>
+          <button id="pauseBtn">Pausar</button>
+          <button id="stopBtn">Parar</button>
+          <button id="skipBtn">Pular</button>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
 
-            <!-- METAS -->
-            <section id="metas" class="section">
-                <h2>🎯 Metas</h2>
-                <ul class="goals-list">
-                    <li><input type="checkbox"> Estudar 2h por dia</li>
-                    <li><input type="checkbox"> Lançar site até sexta</li>
-                    <li><input type="checkbox"> Vender 10 unidades</li>
-                </ul>
-                <button class="btn">+ Nova Meta</button>
-            </section>
+<!-- metas.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>…</head><body>
+  <div class="app-container"><aside class="sidebar"> …</aside><main class="main-content">
+    <h2>🎯 Metas</h2>
+    <ul class="goals-list animate">
+      <li><input type="checkbox"> Estudar 2h por dia</li>
+      <li><input type="checkbox"> Lançar site até sexta</li>
+      <li><input type="checkbox"> Vender 10 unidades</li>
+    </ul>
+    <button class="btn">+ Nova Meta</button>
+  </main></div>
+</body>
+</html>
 
-            <!-- AGENDA -->
-            <section id="agenda" class="section">
-                <h2>📆 Agenda</h2>
-                <div class="agenda-day">
-                    <p>10:00 – Estudar HTML</p>
-                    <p>14:00 – Reunião com equipe</p>
-                    <p>16:30 – Ir ao mercado</p>
-                </div>
-                <button class="btn">+ Novo Evento</button>
-            </section>
-
-            <!-- ROTINAS -->
-            <section id="rotinas" class="section">
-                <h2>🔁 Rotinas Semanais</h2>
-                <p>🟡 Segunda: Estudo + Limpeza</p>
-                <p>🔵 Terça: Vendas + Logística</p>
-                <p>🟢 Quarta: Treino + Conteúdo</p>
-                <button class="btn">Editar Rotina</button>
-            </section>
-
-            <!-- RELATÓRIOS -->
-            <section id="relatorios" class="section">
-                <h2>📈 Relatórios</h2>
-                <p>Em breve: Gráficos de desempenho e progresso com visual insano!</p>
-            </section>
-
-            <!-- CONFIGURAÇÕES -->
-            <section id="configuracoes" class="section">
-                <h2>⚙️ Configurações</h2>
-                <p>Nome: <input type="text" placeholder="Seu nome"></p>
-                <p>Tema: <select><option>Padrão</option><option>Escuro</option></select></p>
-                <button class="btn">Salvar</button>
-            </section>
-        </main>
+<!-- agenda.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>…</head><body>
+  <div class="app-container"><aside class="sidebar"> …</aside><main class="main-content">
+    <h2>📆 Agenda</h2>
+    <div class="agenda-day animate">
+      <p>10:00 – Estudar HTML</p>
+      <p>14:00 – Reunião com equipe</p>
+      <p>16:30 – Ir ao mercado</p>
     </div>
+    <button class="btn">+ Novo Evento</button>
+  </main></div>
+</body>
+</html>
 
-    <script>
-        const links = document.querySelectorAll(".main-nav a");
-        const sections = document.querySelectorAll(".section");
+<!-- rotinas.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>…</head><body>
+  <div class="app-container"><aside class="sidebar"> …</aside><main class="main-content">
+    <h2>🔁 Rotinas Semanais</h2>
+    <div class="routine animate">
+      <p>🟡 Segunda: Estudo + Limpeza</p>
+      <p>🔵 Terça: Vendas + Logística</p>
+      <p>🟢 Quarta: Treino + Conteúdo</p>
+    </div>
+    <button class="btn">Editar Rotina</button>
+  </main></div>
+</body>
+</html>
 
-        links.forEach(link => {
-            link.addEventListener("click", e => {
-                e.preventDefault();
-                links.forEach(l => l.classList.remove("active"));
-                link.classList.add("active");
+<!-- relatorios.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>…</head><body>
+  <div class="app-container"><aside class="sidebar"> …</aside><main class="main-content">
+    <h2>📈 Relatórios</h2>
+    <div class="chart-placeholder animate">
+      <p>Gráficos em breve!</p>
+    </div>
+  </main></div>
+</body>
+</html>
 
-                const target = link.getAttribute("data-section");
-                sections.forEach(section => {
-                    section.classList.remove("active");
-                    if(section.id === target) section.classList.add("active");
-                });
-            });
-        });
-    </script>
+<!-- configuracoes.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>…</head><body>
+  <div class="app-container"><aside class="sidebar"> …</aside><main class="main-content">
+    <h2>⚙️ Configurações</h2>
+    <form class="settings animate">
+      <label>Nome: <input type="text" placeholder="Seu nome"></label>
+      <label>Tema: <select><option>Padrão</option><option>Escuro</option></select></label>
+      <button class="btn">Salvar</button>
+    </form>
+  </main></div>
 </body>
 </html>
