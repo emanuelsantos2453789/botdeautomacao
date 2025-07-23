@@ -1,6 +1,6 @@
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, CommandHandler, filters # <--- ADICIONADO CommandHandler AQUI!
 
 # Configuração do logger para este módulo
 logger = logging.getLogger(__name__)
@@ -267,7 +267,7 @@ def get_metas_conversation_handler() -> ConversationHandler:
     """Retorna o ConversationHandler para a funcionalidade de metas."""
     # Import MAIN_MENU_STATE aqui para evitar circular import se necessário
     from main import MAIN_MENU_STATE
-    
+
     return ConversationHandler(
         entry_points=[
             CallbackQueryHandler(start_metas_menu, pattern='^open_metas_menu$')
@@ -303,4 +303,3 @@ def get_metas_conversation_handler() -> ConversationHandler:
             ConversationHandler.END: MAIN_MENU_STATE
         }
     )
-
