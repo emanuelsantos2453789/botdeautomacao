@@ -3,18 +3,102 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meu Primeiro Site com Railway!</title>
-    <link rel="stylesheet" href="style.css"> </head>
+    <title>OrganizaAção 🛠️ - Seu Hub de Produtividade</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
 <body>
-    <header>
-        <h1>SARAH SANTOS E EMANUEL!</h1>
-    </header>
-    <main>
-        <p>Este é o seu site rodando. Parabéns! 🎉</p>
-        <p>Em breve, teremos um Pomodoro incrível aqui!</p>
-    </main>
-    <footer>
-        <p>&copy; 2024 Meu Projeto. Todos os direitos reservados.</p>
-    </footer>
-    <script src="script.js"></script> </body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="app-logo">
+                <h1>OrganizaAção 🛠️</h1>
+            </div>
+            <nav class="main-nav">
+                <ul>
+                    <li><a href="#" data-section="dashboard">📊 Dashboard</a></li>
+                    <li><a href="#" data-section="pomodoro">🍅 Pomodoro</a></li>
+                    <li><a href="#" data-section="metas">🎯 Metas</a></li>
+                    <li><a href="#" data-section="agenda">🗓️ Agenda</a></li>
+                    <li><a href="#" data-section="rotinas">🔄 Rotinas</a></li>
+                    <li><a href="#" data-section="relatorios">📈 Relatórios</a></li>
+                    <li><a href="#" data-section="configuracoes">⚙️ Configurações</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <header class="main-header">
+                <h2>Bem-vindo de volta! ✨</h2>
+                <p>Seu espaço para organizar e conquistar o dia.</p>
+            </header>
+
+            <section id="dashboard" class="content-section active">
+                <h3>Seu Dashboard de Produtividade 🚀</h3>
+                <div class="dashboard-grid">
+                    <div class="card pomodoro-widget">
+                        <h4>Pomodoro Rápido ⏱️</h4>
+                        <p>Estado: Ocioso</p>
+                        <p>Próximo: Foco (25:00)</p>
+                        <button class="btn btn-primary">Iniciar Foco ▶️</button>
+                    </div>
+
+                    <div class="card metas-widget">
+                        <h4>Suas Metas Diárias 🎯</h4>
+                        <p>Concluir relatório X - Pendente</p>
+                        <p>Responder 5 emails - Concluído ✅</p>
+                        <button class="btn btn-secondary">Ver Todas as Metas</button>
+                    </div>
+
+                    </div>
+            </section>
+
+            <section id="pomodoro" class="content-section hidden">
+                <h3>Seu Pomodoro Personalizado 🍅</h3>
+                <div class="pomodoro-timer">
+                    <div class="timer-display">25:00</div>
+                    <div class="timer-status">Foco</div>
+                </div>
+                <div class="pomodoro-controls">
+                    <button class="btn btn-primary">Iniciar ▶️</button>
+                    <button class="btn btn-secondary">Pausar ⏸️</button>
+                    <button class="btn btn-danger">Parar ⏹️</button>
+                    <button class="btn btn-info">Pular ⏭️</button>
+                </div>
+                <div class="pomodoro-configs">
+                    <button class="btn btn-link">⚙️ Configurações</button>
+                </div>
+            </section>
+
+            <section id="metas" class="content-section hidden">
+                <h3>Minhas Metas 🎯</h3>
+                <p>Aqui você poderá definir e acompanhar suas metas.</p>
+            </section>
+
+            <section id="agenda" class="content-section hidden">
+                <h3>Minha Agenda 🗓️</h3>
+                <p>Gerencie seus eventos e compromissos.</p>
+            </section>
+
+            <section id="rotinas" class="content-section hidden">
+                <h3>Minhas Rotinas 🔄</h3>
+                <p>Crie e mantenha seus hábitos.</p>
+            </section>
+
+            <section id="relatorios" class="content-section hidden">
+                <h3>Relatórios de Produtividade 📈</h3>
+                <p>Visualize seu progresso ao longo do tempo.</p>
+            </section>
+
+            <section id="configuracoes" class="content-section hidden">
+                <h3>Configurações do App ⚙️</h3>
+                <p>Ajuste suas preferências aqui.</p>
+            </section>
+
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
 </html>
