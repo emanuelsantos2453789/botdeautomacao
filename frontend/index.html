@@ -2,57 +2,66 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OrganizaAção 🚀✨ - Seu Painel de Comando Cósmico</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=5.0">
+    <meta name="theme-color" content="#000000">
+    <meta name="description" content="OrganizaAção: Gestão de tarefas, pomodoro e metas em uma plataforma intergaláctica de produtividade">
+    <meta property="og:title" content="OrganizaAção - Painel de Comando Cósmico">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://placehold.co/1200x630?text=OrganizaAção">
+    <meta property="og:url" content="https://exemplo.com">
+    <meta name="twitter:card" content="summary_large_image">
+    <title>OrganizaAção 🚀✨ - Painel de Comando Cósmico</title>
     
-    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
+    <link rel="preload" href="style.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="style.css"></noscript>
     
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Monoton&display=swap" rel="stylesheet"> </head>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=Orbitron:wght@400;600;800&family=Monoton&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=Orbitron:wght@400;600;800&family=Monoton&display=swap"></noscript>
+</head>
 <body>
-    <div class="background-effects-layer">
-        <div class="background-gradient-animated"></div>
-        <div class="background-particles"></div>
+    <div class="background-effects-layer" itemscope itemtype="https://schema.org/WebApplication">
+        <div class="background-gradient-animated" aria-hidden="true"></div>
+        <div class="background-particles" aria-hidden="true"></div>
     </div>
 
-    <div class="app-main-panel">
+    <main class="app-main-panel">
         <header class="panel-header">
-            <h1 class="app-title">Organiza<span>Ação</span> 🚀</h1>
+            <h1 class="app-title" itemprop="name">Organiza<span itemprop="alternateName">Ação</span> <span aria-hidden="true">🚀</span></h1>
             <p class="app-slogan">Seu Universo de Produtividade: Desbloqueie Seu Potencial Cósmico.</p>
         </header>
 
         <div class="content-area">
-            <section id="dashboard" class="content-section active theme-dashboard">
-                <h2 class="section-title">Dashboard <span>📊</span></h2>
+            <section id="dashboard" class="content-section active theme-dashboard" aria-labelledby="dashboard-title">
+                <h2 id="dashboard-title" class="section-title">Dashboard <span>📊</span></h2>
                 <p class="section-description">Sua Estação de Lançamento Pessoal: Visão Rápida e Comandos Essenciais.</p>
                 <div class="dashboard-grid">
-                    <div class="widget glow-border pomodoro-widget">
-                        <h3>Foco Quântico <span class="widget-icon">⏱️</span></h3>
-                        <p>Estado: **Pronto para Ativar**</p>
-                        <button class="btn btn-primary">Iniciar Sequência</button>
-                    </div>
-                    <div class="widget glow-border metas-widget">
-                        <h3>Constelação de Metas <span class="widget-icon">🎯</span></h3>
-                        <p>Progresso Diário: **70% Concluído**</p>
+                    <article class="widget glow-border pomodoro-widget" role="region" aria-labelledby="pomodoro-widget-title">
+                        <h3 id="pomodoro-widget-title">Foco Quântico <span class="widget-icon">⏱️</span></h3>
+                        <p>Estado: <strong>Pronto para Ativar</strong></p>
+                        <button class="btn btn-primary" aria-label="Iniciar sequência de Pomodoro" role="button">Iniciar Sequência</button>
+                    </article>
+                    <article class="widget glow-border metas-widget" role="region" aria-labelledby="metas-widget-title">
+                        <h3 id="metas-widget-title">Constelação de Metas <span class="widget-icon">🎯</span></h3>
+                        <p>Progresso Diário: <strong>70% Concluído</strong></p>
                         <button class="btn btn-secondary">Explorar Galáxia</button>
-                    </div>
-                     <div class="widget glow-border quick-add-widget">
-                        <h3>Adicionar Rápido <span class="widget-icon">➕</span></h3>
+                    </article>
+                    <article class="widget glow-border quick-add-widget" role="region" aria-labelledby="quickadd-heading">
+                        <h3 id="quickadd-heading">Adicionar Rápido <span class="widget-icon" aria-hidden="true">➕</span></h3>
                         <p>Nova Tarefa, Evento ou Lembrete</p>
-                        <button class="btn btn-info">Criação Instantânea</button>
-                    </div>
+                        <button class="btn btn-info" aria-label="Criação rápida de item">Criação Instantânea</button>
+                    </article>
                 </div>
             </section>
 
-            <section id="pomodoro" class="content-section hidden theme-pomodoro">
-                <h2 class="section-title">Ciclo Pomodoro <span>🍅</span></h2>
+            <section id="pomodoro" class="content-section hidden theme-pomodoro" aria-labelledby="pomodoro-title">
+                <h2 id="pomodoro-title" class="section-title">Ciclo Pomodoro <span>🍅</span></h2>
                 <p class="section-description">Ative o Propulsor de Foco: Energia Constante para Suas Tarefas.</p>
                 <div class="pomodoro-interface">
                     <div class="timer-display">
-                        <svg class="timer-svg" viewBox="0 0 100 100">
+                        <svg class="timer-svg" viewBox="0 0 100 100" role="img" aria-labelledby="timer-title timer-desc">
+                            <title id="timer-title">Timer Pomodoro</title>
+                            <desc id="timer-desc">Circle progress indicator showing remaining time</desc>
                             <circle class="timer-circle-background" cx="50" cy="50" r="45"></circle>
                             <circle class="timer-circle-progress" cx="50" cy="50" r="45"></circle>
                         </svg>
@@ -60,53 +69,58 @@
                     </div>
                     <div class="timer-status">Pronto para Focar</div>
                     <div class="pomodoro-controls">
-                        <button class="btn btn-control btn-start">Iniciar Sequência ▶️</button>
-                        <button class="btn btn-control btn-pause">Pausar Ciclo ⏸️</button>
+                        <button class="btn btn-control btn-start" aria-label="Iniciar temporizador pomodoro">
+                            <span class="btn-icon">▶️</span>
+                            <span class="sr-only">Iniciar Sequência</span>
+                        </button>
+                        <button class="btn btn-control btn-pause" aria-label="Pausar ciclo de trabalho">
+                            <span class="btn-icon" aria-hidden="true">⏸️</span>
+                            <span class="sr-only">Pausar Ciclo</span>
+                        </button>
                         <button class="btn btn-control btn-reset">Redefinir Propulsor 🔄</button>
                         <button class="btn btn-control btn-skip">Pular Fase ⏭️</button>
                     </div>
                 </div>
             </section>
 
-            <section id="metas" class="content-section hidden theme-metas">
-                <h2 class="section-title">Minhas Metas Estelares <span>🏆</span></h2>
+            <section id="metas" class="content-section hidden theme-metas" aria-labelledby="metas-title">
+                <h2 id="metas-title" class="section-title">Minhas Metas Estelares <span>🏆</span></h2>
                 <p class="section-description">Trace o Curso: Defina, Acompanhe e Conquiste Seus Objetivos.</p>
                 <button class="btn btn-primary">Adicionar Novo Objetivo ➕</button>
             </section>
 
-            <section id="agenda" class="content-section hidden theme-agenda">
-                <h2 class="section-title">Agenda Intergaláctica <span>🗓️</span></h2>
+            <section id="agenda" class="content-section hidden theme-agenda" aria-labelledby="agenda-title">
+                <h2 id="agenda-title" class="section-title">Agenda Intergaláctica <span>🗓️</span></h2>
                 <p class="section-description">Sincronize Seu Tempo: Gerencie Eventos e Encontros no Fluxo Universal.</p>
                 <button class="btn btn-primary">Novo Evento Astral ➕</button>
             </section>
 
-            <section id="rotinas" class="content-section hidden theme-rotinas">
-                <h2 class="section-title">Rotinas Energéticas <span>🌿</span></h2>
+            <section id="rotinas" class="content-section hidden theme-rotinas" aria-labelledby="rotinas-title">
+                <h2 id="rotinas-title" class="section-title">Rotinas Energéticas <span>🌿</span></h2>
                 <p class="section-description">Crie Seus Próprios Padrões: Hábitos Que Impulsionam Seu Universo.</p>
                 <button class="btn btn-primary">Nova Rotina Essencial ➕</button>
             </section>
 
-            <section id="relatorios" class="content-section hidden theme-relatorios">
-                <h2 class="section-title">Relatórios de Missão <span>📈</span></h2>
+            <section id="relatorios" class="content-section hidden theme-relatorios" aria-labelledby="relatorios-title">
+                <h2 id="relatorios-title" class="section-title">Relatórios de Missão <span>📈</span></h2>
                 <p class="section-description">Analise Seu Progresso: Dados e Insights Para Otimizar Sua Trajetória.</p>
                 <button class="btn btn-info">Gerar Relatório Tático 📊</button>
             </section>
 
-            <section id="configuracoes" class="content-section hidden theme-configuracoes">
-                <h2 class="section-title">Configurações do Núcleo <span>⚙️</span></h2>
+            <section id="configuracoes" class="content-section hidden theme-configuracoes" aria-labelledby="configuracoes-title">
+                <h2 id="configuracoes-title" class="section-title">Configurações do Núcleo <span>⚙️</span></h2>
                 <p class="section-description">Ajuste Seus Parâmetros: Personalize o Universo do OrganizaAção.</p>
                 <button class="btn btn-secondary">Salvar Calibrações ✅</button>
             </section>
-
         </div>
 
-        <nav class="bottom-nav">
+        <nav class="bottom-nav" aria-label="Menu principal" role="navigation" itemscope itemtype="https://schema.org/SiteNavigationElement">
             <ul>
-                <li><a href="#" data-section="dashboard" class="nav-item active">
-                    <span class="nav-icon">🏠</span><span class="nav-text">Início</span>
+                <li itemprop="name"><a href="#" data-section="dashboard" class="nav-item active" aria-current="page" itemprop="url">
+                    <span class="nav-icon" aria-hidden="true">🏠</span><span class="nav-text">Início</span>
                 </a></li>
                 <li><a href="#" data-section="pomodoro" class="nav-item">
-                    <span class="nav-icon">⏱️</span><span class="nav-text">Foco</span>
+                    <span class="nav-icon" aria-hidden="true">⏱️</span><span class="nav-text">Foco</span>
                 </a></li>
                 <li><a href="#" data-section="metas" class="nav-item">
                     <span class="nav-icon">🎯</span><span class="nav-text">Metas</span>
@@ -119,8 +133,8 @@
                 </a></li>
             </ul>
         </nav>
-    </div>
+    </main>
 
-    <script src="script.js"></script>
+    <script src="script.js" defer async crossorigin="anonymous"></script>
 </body>
 </html>
