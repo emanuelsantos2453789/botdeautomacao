@@ -1,36 +1,280 @@
 /* frontend/style.css */
+
+/* Importar fonte Poppins do Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
+
+:root {
+    /* Cores */
+    --color-background-light: #F0F8FF; /* Azul Alice */
+    --color-background-card: #FFFFFF;
+    --color-primary: #4CAF50; /* Verde Produtividade */
+    --color-secondary: #FFD700; /* Dourado/Amarelo Vivo */
+    --color-danger: #F44336; /* Vermelho Erro/Parar */
+    --color-info: #87CEEB; /* Azul Céu */
+    --color-text-dark: #333333;
+    --color-text-medium: #666666;
+    --color-text-light: #F0F8FF; /* Para texto em fundos escuros */
+    --color-border: #E0E0E0; /* Cinza claro para bordas */
+}
+
+/* Reset básico e tipografia */
 body {
-    font-family: Arial, sans-serif;
-    background-color: #f0f2f5;
-    color: #333;
     margin: 0;
     padding: 0;
+    font-family: 'Poppins', sans-serif;
+    background-color: var(--color-background-light);
+    color: var(--color-text-dark);
+    line-height: 1.6;
+    display: flex; /* Para centralizar o app-container se necessário */
+    justify-content: center;
+    align-items: flex-start; /* Alinha no topo */
+    min-height: 100vh;
+}
+
+.app-container {
+    display: flex;
+    width: 100%;
+    max-width: 1400px; /* Limite a largura máxima para monitores grandes */
+    min-height: 100vh;
+    box-shadow: 0 0 20px rgba(0,0,0,0.05); /* Sombra suave */
+    background-color: var(--color-background-card); /* Fundo do container principal */
+}
+
+/* Sidebar (Menu Lateral) */
+.sidebar {
+    width: 250px;
+    background-color: var(--color-text-dark); /* Fundo escuro para contraste */
+    color: var(--color-text-light);
+    padding: 2em 1em;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
     align-items: center;
-    justify-content: center;
+}
+
+.app-logo h1 {
+    font-size: 1.8em;
+    margin-bottom: 1.5em;
+    color: var(--color-text-light);
     text-align: center;
 }
 
-header {
-    background-color: #4CAF50;
-    color: white;
-    padding: 1em 0;
+.main-nav ul {
+    list-style: none;
+    padding: 0;
     width: 100%;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-main {
-    flex: 1;
+.main-nav li {
+    margin-bottom: 0.8em;
+    width: 100%;
+}
+
+.main-nav a {
+    display: block;
+    padding: 0.8em 1em;
+    color: var(--color-text-light);
+    text-decoration: none;
+    border-radius: 8px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    font-weight: 600;
+}
+
+.main-nav a:hover,
+.main-nav a.active {
+    background-color: var(--color-primary); /* Destaque para item ativo/hover */
+    color: white;
+}
+
+/* Main Content */
+.main-content {
+    flex-grow: 1; /* Ocupa o espaço restante */
     padding: 2em;
+    background-color: var(--color-background-light);
 }
 
-footer {
-    background-color: #333;
+.main-header {
+    margin-bottom: 2em;
+    padding-bottom: 1em;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.main-header h2 {
+    font-size: 2em;
+    color: var(--color-primary);
+    margin-bottom: 0.5em;
+}
+
+.main-header p {
+    color: var(--color-text-medium);
+}
+
+/* Seções de Conteúdo */
+.content-section {
+    background-color: var(--color-background-card);
+    padding: 2em;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    margin-bottom: 2em;
+}
+
+.content-section.hidden {
+    display: none; /* Esconde as seções não ativas */
+}
+
+.content-section h3 {
+    color: var(--color-primary);
+    font-size: 1.8em;
+    margin-bottom: 1em;
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); /* Responsivo */
+    gap: 1.5em;
+}
+
+.card {
+    background-color: var(--color-background-card);
+    padding: 1.5em;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    border: 1px solid var(--color-border);
+}
+
+.card h4 {
+    color: var(--color-text-dark);
+    font-size: 1.3em;
+    margin-bottom: 0.8em;
+}
+
+/* Botões */
+.btn {
+    padding: 0.8em 1.5em;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    margin-top: 1em;
+    display: inline-block; /* Para que os botões fiquem lado a lado */
+    margin-right: 0.5em;
+}
+
+.btn:hover {
+    transform: translateY(-2px); /* Efeito suave ao passar o mouse */
+}
+
+.btn-primary {
+    background-color: var(--color-primary);
     color: white;
-    padding: 1em 0;
-    width: 100%;
-    position: relative;
-    bottom: 0;
+}
+
+.btn-primary:hover {
+    background-color: #45a049; /* Tom mais escuro no hover */
+}
+
+.btn-secondary {
+    background-color: var(--color-secondary);
+    color: var(--color-text-dark);
+}
+
+.btn-secondary:hover {
+    background-color: #E0B900;
+}
+
+.btn-danger {
+    background-color: var(--color-danger);
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #d32f2f;
+}
+
+.btn-info {
+    background-color: var(--color-info);
+    color: var(--color-text-dark);
+}
+
+.btn-info:hover {
+    background-color: #64B5F6;
+}
+
+.btn-link {
+    background: none;
+    color: var(--color-text-medium);
+    text-decoration: underline;
+    padding: 0;
+    margin-top: 0.5em;
+}
+
+.btn-link:hover {
+    color: var(--color-primary);
+}
+
+/* Estilo do timer do Pomodoro (provisório) */
+.pomodoro-timer {
+    text-align: center;
+    margin-bottom: 1.5em;
+}
+
+.timer-display {
+    font-size: 4em;
+    font-weight: 700;
+    color: var(--color-text-dark);
+    margin-bottom: 0.2em;
+}
+
+.timer-status {
+    font-size: 1.5em;
+    color: var(--color-text-medium);
+    font-weight: 600;
+}
+
+.pomodoro-controls button {
+    margin: 0.5em;
+}
+
+/* Responsividade Básica */
+@media (max-width: 768px) {
+    .app-container {
+        flex-direction: column; /* Pilha a sidebar e o conteúdo em telas menores */
+    }
+
+    .sidebar {
+        width: 100%;
+        padding: 1em;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        position: sticky; /* Mantém no topo */
+        top: 0;
+        z-index: 1000;
+    }
+
+    .app-logo {
+        display: none; /* Esconde o logo em telas pequenas se for grande demais */
+    }
+
+    .main-nav ul {
+        display: flex;
+        flex-wrap: wrap; /* Permite que os itens quebrem linha */
+        justify-content: center;
+    }
+
+    .main-nav li {
+        margin: 0.5em;
+    }
+
+    .main-content {
+        padding: 1.5em;
+    }
+
+    .main-header h2 {
+        font-size: 1.5em;
+    }
+
+    .content-section h3 {
+        font-size: 1.5em;
+    }
 }
