@@ -1,507 +1,631 @@
 /* frontend/style.css */
 
-/* Importar fonte Poppins do Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap');
-/* Adicionar Montserrat para títulos impactantes */
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&display=swap');
+/* Importar fontes do Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&display=swap');
 
-
-/* Cores Globais - Base para o Brilho Papal */
+/* Variáveis CSS para Cores e Efeitos - O Coração do Brilho Neon */
 :root {
-    --color-bg-light: #F0F8FF; /* Azul Alice, quase branco */
-    --color-bg-white: #FFFFFF; /* Branco puro */
-    --color-text-dark: #212121; /* Cinza super escuro para alto contraste */
-    --color-text-medium: #546E7A; /* Cinza médio para detalhes */
-    --color-text-light: #ECF0F1; /* Para texto em fundos escuros */
+    /* Cores Neutras */
+    --color-dark-panel: rgba(20, 20, 25, 0.85); /* Fundo do painel quase preto com transparência */
+    --color-dark-panel-border: rgba(50, 50, 60, 0.5); /* Borda do painel */
+    --color-text-light: #ECF0F1; /* Texto claro */
+    --color-text-medium: #BDC3C7; /* Texto secundário */
+    --color-text-dark: #34495E; /* Para elementos mais escuros no painel */
 
-    --shadow-soft-light: rgba(0, 0, 0, 0.08); /* Sombra suave para elevação */
-    --shadow-medium: rgba(0, 0, 0, 0.15); /* Sombra mais pronunciada */
-    --border-subtle: #ECEFF1; /* Borda quase invisível */
+    /* Cores de Destaque Neon */
+    --neon-blue: #00FFFF; /* Ciano Elétrico */
+    --neon-green: #00FF99; /* Verde Neon Brilhante */
+    --neon-purple: #9900FF; /* Roxo Elétrico */
+    --neon-pink: #FF00FF; /* Magenta / Rosa Choque */
+    --neon-orange: #FF8C00; /* Laranja Vívido */
 
-    /* Cores do Tema Padrão (Dashboard) - Luz e Abertura */
-    --theme-primary: #00BFA5; /* Verde Água Principal */
-    --theme-primary-dark: #00897B;
-    --theme-secondary: #FFC107; /* Amarelo Dourado */
-    --theme-secondary-dark: #FFA000;
-    --theme-accent: #64B5F6; /* Azul Claro para acentos */
-    --theme-bg-gradient-start: #E0F7FA;
-    --theme-bg-gradient-end: #FFFFFF;
+    /* Sombras e Brilhos */
+    --shadow-deep: 0 20px 50px rgba(0, 0, 0, 0.4); /* Sombra pesada para profundidade */
+    --shadow-glow-blue: 0 0 20px var(--neon-blue);
+    --shadow-glow-green: 0 0 20px var(--neon-green);
+    --shadow-glow-purple: 0 0 20px var(--neon-purple);
+
+    /* Gradientes de Fundo por Tema (para uso com JS) */
+    --bg-dashboard: linear-gradient(135deg, #1A2980 0%, #26D0CE 100%); /* Azul Profundo para Ciano */
+    --bg-pomodoro: linear-gradient(135deg, #FF5F6D 0%, #FFC371 100%); /* Laranja avermelhado para Amarelo */
+    --bg-metas: linear-gradient(135deg, #5D26C1 0%, #A17BF8 100%); /* Roxo Intenso para Lilás */
+    --bg-agenda: linear-gradient(135deg, #0F2027 0%, #203A43 50%, #2C5364 100%); /* Tons de Azul Escuro */
+    --bg-rotinas: linear-gradient(135deg, #4CAF50 0%, #8BC34A 100%); /* Verde da Natureza */
+    --bg-relatorios: linear-gradient(135deg, #1C1C1C 0%, #424242 100%); /* Cinza Escuro para Analise */
+    --bg-configuracoes: linear-gradient(135deg, #303030 0%, #505050 100%); /* Cinza Metálico */
 }
 
-/* Transições para todas as propriedades CSS, suavizando a UI */
+/* Transições Globais para Suavidade */
 * {
-    transition: background-color 0.4s ease, color 0.4s ease, transform 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+    transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1); /* Transição mais sofisticada */
 }
 
-/* Reset básico e tipografia global */
+/* Base e Fundo Animado - A Imersão Começa Aqui */
 body {
     margin: 0;
     padding: 0;
     font-family: 'Poppins', sans-serif;
-    background: radial-gradient(circle at top left, var(--theme-bg-gradient-start) 0%, var(--theme-bg-gradient-end) 70%); /* Gradiente radial "respirando" */
-    color: var(--color-text-dark);
+    color: var(--color-text-light);
     line-height: 1.6;
     display: flex;
     justify-content: center;
-    align-items: flex-start; /* Alinha no topo, mas centraliza horizontalmente */
+    align-items: center;
     min-height: 100vh;
-    overflow-x: hidden; /* Evita scroll horizontal */
+    overflow: hidden; /* Garante que o fundo não cause scroll */
+    position: relative; /* Para posicionar o painel flutuante */
+    background: var(--bg-dashboard); /* Fundo inicial do Dashboard */
+    background-size: 200% 200%; /* Para a animação do gradiente */
+    animation: backgroundShift 20s ease infinite alternate; /* Animação de fundo */
 }
 
-/* Container Principal do App - O "Palácio" */
-.app-container {
-    display: flex;
+@keyframes backgroundShift {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 100% 100%; }
+}
+
+/* Camada de Animação de Fundo (se quisermos partículas/linhas depois) */
+.background-animation-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
-    max-width: 1600px; /* Ainda mais espaçoso */
-    min-height: 95vh; /* Quase a altura total da tela */
-    background-color: var(--color-bg-white);
-    border-radius: 25px; /* Bordas super arredondadas */
-    box-shadow: 0 30px 60px var(--shadow-medium); /* Sombra majestosa */
-    margin: 25px; /* Margem em volta */
-    overflow: hidden;
-    position: relative; /* Para posicionar elementos internos */
+    height: 100%;
+    z-index: -1; /* Fica atrás do conteúdo */
+    /* Exemplo futuro de animação de partículas */
+    /* background: url('path/to/your/particles.svg') repeat; */
+    /* opacity: 0.1; */
 }
 
-/* Sidebar - O "Pilar Central" de Navegação */
-.sidebar {
-    width: 300px; /* Mais largura para a elegância */
-    background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%); /* Azul marinho profundo */
-    color: var(--color-text-light);
-    padding: 3em 1.5em;
-    box-shadow: 8px 0 20px rgba(0,0,0,0.3); /* Sombra mais dramática */
+/* Painel Principal Flutuante - O Centro de Comando de Vidro Fosco */
+.app-main-panel {
+    background: var(--color-dark-panel); /* Fundo translúcido */
+    backdrop-filter: blur(15px); /* Efeito de vidro fosco */
+    -webkit-backdrop-filter: blur(15px); /* Compatibilidade Safari */
+    border: 1px solid var(--color-dark-panel-border);
+    border-radius: 30px; /* Bordas super arredondadas */
+    box-shadow: var(--shadow-deep); /* Sombra para o efeito flutuante */
+    display: flex;
+    flex-direction: column;
+    width: 90%;
+    max-width: 1200px; /* Tamanho controlado */
+    min-height: 70vh; /* Altura mínima */
+    padding: 2.5em; /* Padding interno */
+    position: relative;
+    z-index: 1; /* Acima do fundo animado */
+}
+
+/* Cabeçalho do Painel */
+.panel-header {
+    text-align: center;
+    margin-bottom: 3em;
+    padding-bottom: 1em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.app-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 3.5em;
+    font-weight: 800;
+    color: var(--neon-blue); /* Cor neon vibrante */
+    text-shadow: 0 0 15px var(--neon-blue); /* Brilho neon */
+    margin-bottom: 0.2em;
+}
+
+.app-title span {
+    font-size: 0.8em; /* Ajusta o tamanho do emoji */
+    margin-left: 10px;
+}
+
+.app-slogan {
+    font-size: 1.2em;
+    color: var(--color-text-medium);
+}
+
+/* Área de Conteúdo Dinâmico */
+.content-area {
+    flex-grow: 1;
+    overflow-y: auto; /* Scroll para o conteúdo se necessário */
+    padding-right: 1em; /* Espaço para a barra de scroll */
+    margin-bottom: 2em; /* Espaço para a navegação inferior */
+}
+
+/* Estilos de Seção - Personalidade Brilhante por Módulo */
+.content-section {
+    opacity: 0;
+    transform: translateY(20px);
+    pointer-events: none; /* Não clicável quando escondido */
+    position: absolute; /* Para sobrepor as seções */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0 2.5em; /* Ajusta padding para o painel */
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* Centraliza conteúdo verticalmente */
+    align-items: center; /* Centraliza conteúdo horizontalmente */
+}
+
+.content-section.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto; /* Clicável quando ativo */
+    position: relative; /* Volta para o fluxo normal quando ativo */
+}
+
+/* Títulos de Seção com Brilho e Gradiente */
+.section-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 3em;
+    font-weight: 800;
+    margin-bottom: 0.5em;
+    text-align: center;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent; /* Torna o texto transparente para mostrar o gradiente */
+    position: relative;
+    padding-bottom: 0.2em;
+    display: inline-block;
+}
+
+.section-title::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -5px;
+    width: 80%;
+    height: 4px;
+    background: linear-gradient(90deg, transparent, var(--neon-green), transparent); /* Linha de brilho */
+    border-radius: 2px;
+    transform: translateX(-50%);
+}
+
+.section-description {
+    font-size: 1.1em;
+    color: var(--color-text-medium);
+    margin-bottom: 2em;
+    text-align: center;
+}
+
+/* TEMAS POR SEÇÃO (Variáveis e Estilos Específicos) */
+
+/* Dashboard Theme */
+.content-section.theme-dashboard .section-title {
+    background-image: linear-gradient(90deg, var(--neon-blue), var(--neon-green));
+    text-shadow: 0 0 10px var(--neon-blue);
+}
+.content-section.theme-dashboard .section-title::after {
+    background: linear-gradient(90deg, transparent, var(--neon-blue), transparent);
+}
+
+/* Pomodoro Theme */
+.content-section.theme-pomodoro .section-title {
+    background-image: linear-gradient(90deg, var(--neon-orange), var(--neon-pink));
+    text-shadow: 0 0 10px var(--neon-orange);
+}
+.content-section.theme-pomodoro .section-title::after {
+    background: linear-gradient(90deg, transparent, var(--neon-orange), transparent);
+}
+
+/* Metas Theme */
+.content-section.theme-metas .section-title {
+    background-image: linear-gradient(90deg, var(--neon-purple), var(--neon-pink));
+    text-shadow: 0 0 10px var(--neon-purple);
+}
+.content-section.theme-metas .section-title::after {
+    background: linear-gradient(90deg, transparent, var(--neon-purple), transparent);
+}
+
+/* Agenda Theme */
+.content-section.theme-agenda .section-title {
+    background-image: linear-gradient(90deg, #ADD8E6, #87CEFA); /* Azul claro */
+    text-shadow: 0 0 10px #ADD8E6;
+}
+.content-section.theme-agenda .section-title::after {
+    background: linear-gradient(90deg, transparent, #ADD8E6, transparent);
+}
+
+/* Rotinas Theme */
+.content-section.theme-rotinas .section-title {
+    background-image: linear-gradient(90deg, #90EE90, #32CD32); /* Verde vivo */
+    text-shadow: 0 0 10px #90EE90;
+}
+.content-section.theme-rotinas .section-title::after {
+    background: linear-gradient(90deg, transparent, #90EE90, transparent);
+}
+
+/* Relatórios Theme */
+.content-section.theme-relatorios .section-title {
+    background-image: linear-gradient(90deg, #D3D3D3, #A9A9A9); /* Cinza metálico */
+    text-shadow: 0 0 10px #D3D3D3;
+}
+.content-section.theme-relatorios .section-title::after {
+    background: linear-gradient(90deg, transparent, #D3D3D3, transparent);
+}
+
+/* Configurações Theme */
+.content-section.theme-configuracoes .section-title {
+    background-image: linear-gradient(90deg, #FFA500, #FFD700); /* Dourado/Laranja */
+    text-shadow: 0 0 10px #FFA500;
+}
+.content-section.theme-configuracoes .section-title::after {
+    background: linear-gradient(90deg, transparent, #FFA500, transparent);
+}
+
+
+/* Dashboard Grid e Widgets - Peças do Painel */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2em;
+    width: 100%;
+    max-width: 900px; /* Limita a largura para melhor visualização */
+}
+
+.widget {
+    background: rgba(255, 255, 255, 0.08); /* Transparente para o fundo do painel */
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    padding: 1.5em;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
     display: flex;
     flex-direction: column;
     align-items: center;
-    z-index: 10;
-}
-
-.app-logo h1 {
-    font-family: 'Montserrat', sans-serif; /* Fonte para o logo */
-    font-size: 2.5em; /* Logo grandioso */
-    margin-bottom: 2.5em;
-    color: var(--color-text-light);
     text-align: center;
-    font-weight: 900; /* Extra bold */
-    letter-spacing: 1px;
-    text-shadow: 0 0 15px rgba(0, 191, 165, 0.7); /* Brilho neon sutil no logo */
-}
-
-.main-nav ul {
-    list-style: none;
-    padding: 0;
-    width: 100%;
-}
-
-.main-nav li {
-    margin-bottom: 1.2em; /* Mais espaçamento */
-    width: 100%;
-}
-
-.main-nav a {
-    display: flex;
-    align-items: center;
-    padding: 1.2em 1.5em; /* Mais padding */
-    color: var(--color-text-light);
-    text-decoration: none;
-    border-radius: 12px; /* Super arredondado */
-    font-weight: 600;
-    font-size: 1.15em;
     position: relative;
-    overflow: hidden; /* Para o efeito de brilho */
+    overflow: hidden;
+}
+
+.widget::before { /* Efeito de borda com brilho */
+    content: '';
+    position: absolute;
+    inset: -2px; /* Espalha um pouco além da borda */
+    border-radius: inherit;
+    background: conic-gradient(from var(--angle), transparent 0deg, var(--neon-blue) 90deg, transparent 180deg);
+    opacity: 0;
+    mask: linear-gradient(#000, #000) content-box, linear-gradient(#000, #000);
+    mask-composite: exclude;
+    -webkit-mask-composite: exclude;
+    transition: opacity 0.5s ease;
+    animation: rotateBorder 4s linear infinite paused; /* Pausado por padrão */
+}
+
+.widget:hover::before {
+    opacity: 1;
+    animation-play-state: running; /* Inicia a animação no hover */
+}
+
+@keyframes rotateBorder {
+    to { transform: rotate(360deg); }
+}
+
+.widget h3 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.5em;
+    color: var(--neon-green);
+    text-shadow: 0 0 8px var(--neon-green);
+    margin-bottom: 0.5em;
+}
+
+.widget-icon {
+    font-size: 1.8em;
+    margin-left: 10px;
+}
+
+.widget p {
+    color: var(--color-text-medium);
+    font-size: 1em;
+    margin-bottom: 1em;
+}
+
+/* Botões - Elementos Interativos */
+.btn {
+    padding: 0.8em 1.8em;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    position: relative;
+    overflow: hidden;
     z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-.main-nav a span {
-    margin-right: 12px; /* Mais espaço para o emoji */
-    font-size: 1.3em;
-}
-
-/* Efeito de brilho ao passar o mouse ou ativo */
-.main-nav a::before {
+.btn::before { /* Efeito de brilho / overlay */
     content: '';
     position: absolute;
     top: 0;
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-    transition: left 0.6s ease;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.4s ease;
     z-index: -1;
 }
 
-.main-nav a:hover::before {
-    left: 100%; /* Efeito de brilho passando */
+.btn:hover::before {
+    left: 100%;
 }
 
-.main-nav a:hover {
-    background: linear-gradient(90deg, #34495e 0%, #4a667b 100%); /* Gradiente sutil no hover */
-    transform: translateX(8px); /* Deslize mais pronunciado */
-    box-shadow: 0 8px 25px rgba(0, 191, 165, 0.4); /* Sombra esmeralda brilhante */
-}
-
-.main-nav a.active {
-    background: linear-gradient(90deg, var(--theme-primary) 0%, var(--theme-primary-dark) 100%); /* Gradiente vibrante para ativo */
-    color: white;
-    box-shadow: 0 8px 25px rgba(0, 191, 165, 0.5), 0 0 20px rgba(255, 255, 255, 0.4) inset; /* Sombra externa e brilho interno */
-    border-left: 6px solid var(--theme-secondary); /* Borda dourada de destaque */
-    padding-left: 1.2em; /* Ajusta padding */
-    transform: translateX(0); /* Garante que não desliza */
-}
-
-
-/* Main Content - A "Tela de Exibição" */
-.main-content {
-    flex-grow: 1;
-    padding: 3.5em; /* Padding generoso */
-    background-color: var(--color-bg-white); /* Fundo padrão branco, mudará com o tema JS */
-    position: relative;
-    overflow-y: auto;
-}
-
-/* Transição de Fundo para o Main Content (Controlado por JS) */
-.main-content.theme-dashboard {
-    background: radial-gradient(circle at top left, #E0F7FA 0%, #FFFFFF 70%);
-}
-.main-content.theme-pomodoro {
-    background: linear-gradient(160deg, #E8F5E9 0%, #DCEDC8 100%); /* Verde menta para Pomodoro */
-}
-.main-content.theme-metas {
-    background: linear-gradient(160deg, #EDE7F6 0%, #D1C4E9 100%); /* Lavanda para Metas */
-}
-.main-content.theme-agenda {
-    background: linear-gradient(160deg, #E3F2FD 0%, #BBDEFB 100%); /* Azul céu para Agenda */
-}
-.main-content.theme-rotinas {
-    background: linear-gradient(160deg, #FBE9E7 0%, #FFCCBC 100%); /* Laranja suave para Rotinas */
-}
-.main-content.theme-relatorios {
-    background: linear-gradient(160deg, #CFD8DC 0%, #B0BEC5 100%); /* Cinza frio para Relatórios */
-}
-.main-content.theme-configuracoes {
-    background: linear-gradient(160deg, #EEEEEE 0%, #E0E0E0 100%); /* Cinza neutro para Configurações */
-}
-
-
-.main-header {
-    margin-bottom: 3em;
-    padding-bottom: 1.5em;
-    border-bottom: 1px solid var(--border-subtle);
-}
-
-.main-header h2 {
-    font-family: 'Montserrat', sans-serif;
-    font-size: 3em; /* Título principal enorme */
-    color: var(--color-text-dark);
-    margin-bottom: 0.1em;
-    font-weight: 900;
-    text-shadow: 2px 2px 8px rgba(0,0,0,0.1); /* Sombra mais evidente */
-}
-
-.main-header p {
-    color: var(--color-text-medium);
-    font-size: 1.2em;
-}
-
-/* Seções de Conteúdo - "Salas Temáticas" */
-.content-section {
-    background-color: var(--color-bg-white);
-    padding: 3em; /* Mais padding */
-    border-radius: 20px; /* Super arredondado */
-    box-shadow: 0 15px 40px var(--shadow-soft-light); /* Sombra flutuante */
-    margin-bottom: 3em;
-    border: 1px solid var(--border-subtle);
-    opacity: 0; /* Começa invisível para a animação */
-    transform: translateY(20px); /* Começa um pouco abaixo */
-    animation: fadeInSlideUp 0.6s ease-out forwards; /* Animação de entrada */
-}
-
-.content-section.hidden {
-    display: none;
-}
-
-@keyframes fadeInSlideUp {
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.content-section h3 {
-    font-family: 'Montserrat', sans-serif;
-    color: var(--theme-primary); /* Títulos de seção usam a cor primária do TEMA ATIVO */
-    font-size: 2.5em;
-    margin-bottom: 1.2em;
-    font-weight: 800;
-    display: inline-block;
-    padding-bottom: 0.5em;
-    position: relative;
-}
-
-.content-section h3::after { /* Linha de destaque animada */
-    content: '';
-    position: absolute;
-    left: 0;
-    bottom: 0;
-    width: 100%;
-    height: 4px;
-    background: linear-gradient(90deg, var(--theme-primary) 0%, var(--theme-secondary) 100%);
-    border-radius: 2px;
-}
-
-/* Dashboard Grid - "Expositores de Gemas" */
-.dashboard-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); /* Widgets ainda maiores */
-    gap: 2.5em; /* Mais espaço entre widgets */
-}
-
-.card {
-    background-color: var(--color-card-bg);
-    padding: 2.5em;
-    border-radius: 20px;
-    box-shadow: 0 10px 30px var(--shadow-soft-light);
-    border: 1px solid var(--border-subtle);
-    position: relative;
-    overflow: hidden;
-    z-index: 1;
-}
-
-.card:hover {
-    transform: translateY(-10px); /* Elevação mais notável */
-    box-shadow: 0 18px 45px var(--shadow-medium); /* Sombra mais forte e macia */
-}
-
-.card h4 {
-    font-family: 'Montserrat', sans-serif;
-    color: var(--color-text-dark);
-    font-size: 1.8em;
-    margin-bottom: 1.2em;
-    font-weight: 800;
-}
-
-.card p {
-    color: var(--color-text-medium);
-    margin-bottom: 1.5em;
-}
-
-/* Botões - "Joias Clicáveis" */
-.btn {
-    padding: 1.2em 2.5em; /* Botões ainda maiores e mais imponentes */
-    border: none;
-    border-radius: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.4s cubic-bezier(.25,.8,.25,1); /* Curva de transição mais suave */
-    margin-top: 2em;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px; /* Mais espaço para o ícone */
-    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-    font-size: 1.05em; /* Um pouco menor para caber mais texto, mas bold */
-}
-
-.btn:hover {
-    transform: translateY(-5px); /* Elevação ainda maior */
-    box-shadow: 0 12px 30px rgba(0,0,0,0.2);
-}
-
-/* Gradientes animados e brilhos para os botões */
 .btn-primary {
-    background: linear-gradient(45deg, var(--theme-primary) 0%, var(--theme-primary-dark) 100%);
-    color: white;
-    position: relative;
-    overflow: hidden;
+    background: linear-gradient(45deg, var(--neon-blue), var(--neon-green));
+    color: var(--color-dark-panel);
+    text-shadow: 0 0 5px rgba(255,255,255,0.5);
 }
-
-.btn-primary::after { /* Efeito de brilho ao clicar */
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 0;
-    height: 0;
-    background: rgba(255, 255, 255, 0.4);
-    border-radius: 50%;
-    opacity: 0;
-    transform: translate(-50%, -50%);
-    transition: width 0.4s ease-out, height 0.4s ease-out, opacity 0.4s ease-out;
-}
-
-.btn-primary:active::after {
-    width: 300%;
-    height: 300%;
-    opacity: 1;
-    transition: 0s; /* Remove transição no active para resposta instantânea */
-}
-
 
 .btn-secondary {
-    background: linear-gradient(45deg, var(--theme-secondary) 0%, var(--theme-secondary-dark) 100%);
-    color: var(--color-text-dark); /* Texto escuro para contraste no amarelo */
-}
-
-.btn-danger {
-    background-color: #EF5350; /* Vermelho vibrante para parar/erro */
+    background: linear-gradient(45deg, var(--neon-purple), var(--neon-pink));
     color: white;
+    text-shadow: 0 0 5px rgba(255,255,255,0.5);
 }
 
 .btn-info {
-    background-color: #42A5F5; /* Azul claro para informações */
-    color: white; /* Texto branco para contraste no azul */
+    background: linear-gradient(45deg, var(--neon-orange), #FFD700);
+    color: var(--color-dark-panel);
+    text-shadow: 0 0 5px rgba(255,255,255,0.5);
 }
 
-.btn-link {
-    background: none;
-    color: var(--theme-primary);
-    text-decoration: none;
-    padding: 0;
-    margin-top: 1em;
-    font-weight: 600;
-    transition: color 0.3s ease, text-decoration 0.3s ease;
+/* Botões de Controle do Pomodoro */
+.btn-control {
+    padding: 1em 1.5em; /* Maiores para toque */
+    min-width: 120px;
+    margin: 0.5em;
+    font-size: 1.1em;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+}
+.btn-control:hover {
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.6);
 }
 
-.btn-link:hover {
-    color: var(--theme-primary-dark);
-    text-decoration: underline;
-}
-
-/* Estilo do timer do Pomodoro (provisório e ainda mais impactante) */
-.pomodoro-timer {
-    text-align: center;
-    margin-bottom: 2.5em;
-    padding: 2em;
-    background: var(--color-bg-white);
-    border-radius: 20px;
-    box-shadow: inset 0 0 25px rgba(0,0,0,0.08), 0 5px 15px rgba(0,0,0,0.05); /* Sombra interna e externa */
-    position: relative;
-    overflow: hidden;
-    border: 2px solid var(--theme-primary); /* Borda primária para destaque */
+/* Pomodoro Interface - O Coração Pulsante */
+.pomodoro-interface {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 2em;
+    width: 100%;
+    max-width: 500px; /* Limita o tamanho do timer */
 }
 
 .timer-display {
-    font-family: 'Montserrat', sans-serif;
-    font-size: 7em; /* Timer GIGANTE para o foco total */
-    font-weight: 900;
-    color: var(--color-text-dark);
-    margin-bottom: 0.05em; /* Reduz margem */
-    text-shadow: 3px 3px 10px rgba(0,0,0,0.2); /* Sombra forte para os números */
-    letter-spacing: -2px; /* Apertar um pouco os números para impacto */
+    position: relative;
+    width: 250px;
+    height: 250px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.2); /* Fundo sutil do timer */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 1.5em;
+    box-shadow: 0 0 30px rgba(0,0,0,0.5) inset; /* Sombra interna para profundidade */
+}
+
+.timer-circle {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 5px solid transparent;
+    border-top-color: var(--neon-green); /* Cor inicial do anel */
+    border-right-color: var(--neon-blue);
+    border-bottom-color: var(--neon-green);
+    border-left-color: var(--neon-blue);
+    animation: rotate 10s linear infinite; /* Rotação sutil do anel */
+    filter: drop-shadow(0 0 8px var(--neon-green)); /* Brilho do anel */
+}
+
+@keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.time-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 4em; /* Números do timer gigantes */
+    font-weight: 800;
+    color: var(--neon-blue);
+    text-shadow: 0 0 15px var(--neon-blue); /* Brilho neon nos números */
 }
 
 .timer-status {
-    font-size: 2em; /* Status maior */
-    color: var(--theme-primary); /* Status com cor primária do tema */
-    font-weight: 800;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    animation: pulseGlow 1.5s infinite alternate; /* Animação de pulsação suave */
+    font-size: 1.5em;
+    font-weight: 600;
+    color: var(--neon-green);
+    text-shadow: 0 0 10px var(--neon-green);
+    animation: pulseText 2s ease infinite alternate; /* Pulsar o texto de status */
 }
 
-@keyframes pulseGlow {
-    from { text-shadow: 0 0 10px var(--theme-primary), 0 0 20px var(--theme-primary); }
-    to { text-shadow: 0 0 15px var(--theme-primary), 0 0 30px var(--theme-primary); }
+@keyframes pulseText {
+    from { opacity: 0.8; text-shadow: 0 0 5px var(--neon-green); }
+    to { opacity: 1; text-shadow: 0 0 15px var(--neon-green); }
 }
 
-.pomodoro-controls button {
-    margin: 0.8em;
-    min-width: 140px; /* Largura mínima para botões */
-    font-size: 1.1em;
+.pomodoro-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1em;
+    margin-top: 2em;
 }
 
-.pomodoro-configs {
-    text-align: right;
-    margin-top: 1.5em;
+/* Navegação Inferior (Bottom Nav) - O Controle Flutuante */
+.bottom-nav {
+    position: sticky; /* ou fixed, se preferir flutuante na tela */
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 600px; /* Tamanho da barra */
+    background: var(--color-dark-panel);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--color-dark-panel-border);
+    border-radius: 50px; /* Super arredondada */
+    box-shadow: var(--shadow-deep);
+    padding: 0.8em 1.5em;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 1000; /* Sempre no topo */
+    margin-top: 2em; /* Espaço para o conteúdo acima */
 }
 
-/* Responsividade Aprimorada para Todos os Dispositivos */
-@media (max-width: 1200px) {
-    .app-container {
-        max-width: 1200px;
+.bottom-nav ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    width: 100%;
+    justify-content: space-around;
+}
+
+.bottom-nav li {
+    flex: 1;
+    text-align: center;
+}
+
+.bottom-nav .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none;
+    color: var(--color-text-medium);
+    padding: 0.5em;
+    border-radius: 40px; /* Para o efeito de ativação */
+    position: relative;
+    overflow: hidden;
+}
+
+.bottom-nav .nav-icon {
+    font-size: 1.8em;
+    margin-bottom: 0.2em;
+    filter: drop-shadow(0 0 5px transparent); /* Inicialmente sem brilho */
+}
+
+.bottom-nav .nav-text {
+    font-size: 0.8em;
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+.bottom-nav .nav-item.active {
+    color: var(--neon-blue); /* Cor do texto ativo */
+    background: rgba(0, 255, 255, 0.1); /* Fundo sutil para ativo */
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.4); /* Brilho no item ativo */
+}
+
+.bottom-nav .nav-item.active .nav-icon {
+    filter: drop-shadow(0 0 10px var(--neon-blue)); /* Brilho intenso no ícone ativo */
+}
+
+.bottom-nav .nav-item:hover {
+    color: var(--neon-green);
+    background: rgba(0, 255, 153, 0.1);
+    box-shadow: 0 0 10px rgba(0, 255, 153, 0.3);
+}
+
+.bottom-nav .nav-item:hover .nav-icon {
+    filter: drop-shadow(0 0 8px var(--neon-green));
+}
+
+
+/* Responsividade - Adaptação a Telas Menores */
+@media (max-width: 992px) {
+    .app-main-panel {
+        padding: 1.5em;
+        width: 95%;
+        margin: 15px;
     }
-    .main-header h2 {
+    .panel-header {
+        margin-bottom: 2em;
+    }
+    .app-title {
         font-size: 2.5em;
     }
-    .content-section h3 {
+    .app-slogan {
+        font-size: 1em;
+    }
+    .content-area {
+        padding-right: 0.5em;
+    }
+    .section-title {
         font-size: 2em;
+    }
+    .section-description {
+        font-size: 0.9em;
     }
     .dashboard-grid {
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    }
-}
-
-@media (max-width: 992px) {
-    .app-container {
-        flex-direction: column; /* Empilha sidebar e conteúdo */
-        margin: 10px;
-        border-radius: 15px;
-        min-height: 98vh;
-    }
-    .sidebar {
-        width: 100%;
-        padding: 1.5em 1em;
-        border-bottom-left-radius: 15px;
-        border-bottom-right-radius: 15px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-    }
-    .app-logo h1 {
-        font-size: 2em;
-        margin-bottom: 1em;
-    }
-    .main-nav ul {
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 0.8em;
-    }
-    .main-nav li {
-        margin-bottom: 0;
-    }
-    .main-nav a {
-        padding: 0.8em 1em;
-        font-size: 1em;
-        transform: translateX(0) !important; /* Desabilita o slide no mobile */
-    }
-    .main-nav a:hover {
-        transform: translateX(0); /* Garante que não desliza no hover mobile */
-    }
-    .main-nav a.active {
-        border-left: none; /* Remove borda lateral para mobile */
-        border-bottom: 4px solid var(--theme-secondary); /* Borda inferior para ativo */
-        padding-left: 1em; /* Ajusta padding */
-    }
-    .main-content {
-        padding: 1.5em;
-    }
-    .main-header h2 {
-        font-size: 2em;
-    }
-    .content-section {
-        padding: 1.5em;
-    }
-    .content-section h3 {
-        font-size: 1.6em;
+        grid-template-columns: 1fr; /* Coluna única no mobile */
     }
     .timer-display {
-        font-size: 5em;
+        width: 200px;
+        height: 200px;
+    }
+    .time-value {
+        font-size: 3.5em;
     }
     .timer-status {
+        font-size: 1.2em;
+    }
+    .pomodoro-controls {
+        flex-direction: column; /* Botões empilhados */
+        gap: 0.8em;
+    }
+    .btn-control {
+        min-width: unset;
+        width: 80%;
+    }
+    .bottom-nav {
+        width: calc(100% - 30px); /* Ocupa quase toda a largura */
+        padding: 0.5em 1em;
+        border-radius: 30px;
+    }
+    .bottom-nav .nav-icon {
         font-size: 1.5em;
     }
-    .pomodoro-controls button {
-        min-width: unset;
-        width: 100%;
-        margin: 0.5em 0;
+    .bottom-nav .nav-text {
+        font-size: 0.7em;
     }
 }
 
 @media (max-width: 600px) {
-    .main-header h2 {
-        font-size: 1.5em;
+    .app-main-panel {
+        padding: 1em;
+    }
+    .panel-header {
+        margin-bottom: 1.5em;
+    }
+    .app-title {
+        font-size: 2em;
+    }
+    .section-title {
+        font-size: 1.8em;
+    }
+    .btn {
+        padding: 0.7em 1.5em;
+        font-size: 0.9em;
     }
     .timer-display {
-        font-size: 4em;
+        width: 150px;
+        height: 150px;
+    }
+    .time-value {
+        font-size: 2.8em;
     }
     .timer-status {
-        font-size: 1.2em;
+        font-size: 1em;
     }
 }
