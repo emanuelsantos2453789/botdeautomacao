@@ -1,15 +1,6 @@
 import logging
-# Configuração básica de logging
-# Isso irá registrar mensagens de nível INFO ou superior no console
-# e mensagens de nível DEBUG ou superior em 'bot.log'
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO # Defina para DEBUG para ver mais detalhes durante o desenvolvimento
-)
-logger = logging.getLogger(__name__) # O logger para este módulo específico
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, filters
-import logging
 
 # Configuração do logger para este módulo
 logger = logging.getLogger(__name__)
@@ -111,7 +102,7 @@ async def list_metas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = update.effective_user.id
         query = update.callback_query
         await query.answer()
-        
+
         metas_do_usuario = context.user_data.get('metas_semanais', {}).get(user_id, {})
 
         if not metas_do_usuario:
@@ -137,8 +128,8 @@ async def list_metas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             logger.info(f"Usuário {user_id} listou suas metas.")
 
         await query.edit_message_text(text=message, parse_mode='Markdown')
-        
-        await query.message.reply_text(
+
+        await query.message.reply_text( # Mudei para reply_text para evitar conflito se a mensagem original já foi editada
             'O que mais você quer fazer com suas metas semanais? 🎯',
             reply_markup=get_metas_menu_keyboard()
         )
@@ -260,12 +251,13 @@ async def cancel_metas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     try:
         query = update.callback_query
         if query:
-            await query.answer()
+            await query.answer("Voltando ao menu principal...") # Adicionado feedback
+            # Não é necessário editar a mensagem aqui, pois o handler pai fará isso
+            # através do 'return_to_main_menu' em main.py
         logger.info(f"Usuário {update.effective_user.id} cancelou a conversa de metas.")
-        return ConversationHandler.END
+        return ConversationHandler.END # <--- ESSENCIAL! Isso sinaliza ao pai para encerrar esta conversa.
     except Exception as e:
         logger.error(f"Erro ao cancelar conversa de metas para o usuário {update.effective_user.id}: {e}", exc_info=True)
-        # Tenta enviar uma mensagem de erro, mas o estado da conversa já pode estar em transição
         if update.callback_query:
             await update.callback_query.message.reply_text("Ops! Ocorreu um erro ao sair do menu de metas.")
         return ConversationHandler.END
@@ -273,6 +265,9 @@ async def cancel_metas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 def get_metas_conversation_handler() -> ConversationHandler:
     """Retorna o ConversationHandler para a funcionalidade de metas."""
+    # Import MAIN_MENU_STATE aqui para evitar circular import se necessário
+    from main import MAIN_MENU_STATE
+    
     return ConversationHandler(
         entry_points=[
             CallbackQueryHandler(start_metas_menu, pattern='^open_metas_menu$')
@@ -283,7 +278,7 @@ def get_metas_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(list_metas, pattern='^metas_list$'),
                 CallbackQueryHandler(complete_meta_prompt, pattern='^metas_complete$'),
                 CallbackQueryHandler(delete_meta_prompt, pattern='^metas_delete$'),
-                CallbackQueryHandler(cancel_metas, pattern='^main_menu_return$') # Handler para voltar ao menu principal
+                CallbackQueryHandler(cancel_metas, pattern='^main_menu_return$')
             ],
             TYPING_META_ADD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_meta)
@@ -296,12 +291,16 @@ def get_metas_conversation_handler() -> ConversationHandler:
             ],
         },
         fallbacks=[
-            # Este fallback pega qualquer mensagem ou callback que não corresponda aos estados atuais
-            # e tenta levar o usuário de volta ao menu de metas ou ao menu principal
-            CallbackQueryHandler(cancel_metas, pattern='^main_menu_return$'), # Fallback global para voltar ao menu principal
-            MessageHandler(filters.ALL & ~filters.COMMAND, start_metas_menu) # Tenta mostrar o menu novamente para qualquer texto/não-comando
+            # O cancel_metas já lida com o 'main_menu_return' e retorna END.
+            # O MessageHandler abaixo é para texto inesperado dentro da conversa de metas.
+            MessageHandler(filters.ALL & ~filters.COMMAND, start_metas_menu),
+            CommandHandler("start", start_metas_menu) # Caso o usuário digite /start aqui, reinicia a conversa de metas
         ],
         map_to_parent={
-            ConversationHandler.END: ConversationHandler.END # Indica ao handler pai que a conversa terminou
+            # ATENÇÃO: ESSA É A MUDANÇA MAIS IMPORTANTE AQUI!
+            # Quando a conversa de Metas terminar (retornar ConversationHandler.END),
+            # o controle deve retornar ao MAIN_MENU_STATE do handler principal.
+            ConversationHandler.END: MAIN_MENU_STATE
         }
     )
+
