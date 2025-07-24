@@ -2,7 +2,6 @@ Flask==2.3.2
 Flask-SocketIO==5.3.4
 Flask-CORS==3.0.10
 Flask-SQLAlchemy==3.0.3
-gunicorn==20.1.0
 eventlet==0.33.3
 python-dotenv==1.0.0
 pytz==2023.3
