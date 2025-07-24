@@ -24,5 +24,5 @@ ENV FLASK_ENV=production
 ENV PORT=5000
 EXPOSE $PORT
 
-# Comando de execução (versão simplificada e robusta)
-CMD gunicorn --worker-class eventlet --bind 0.0.0.0:$PORT --access-logfile - --error-logfile - app:app
+# SOLUÇÃO DEFINITIVA: Execute com o Eventlet diretamente
+CMD ["python", "-m", "eventlet", "--nopatch", "app.py", "0.0.0.0", "5000"]
