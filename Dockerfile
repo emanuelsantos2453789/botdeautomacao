@@ -1,23 +1,36 @@
-# Dockerfile
-# Usa uma imagem oficial do Python como base
+# backend/Dockerfile
 FROM python:3.9-slim-buster
 
-# Define o diretório de trabalho dentro do container
 WORKDIR /app
 
-# Copia o arquivo de requisitos e instala as dependências
-# Isso aproveita o cache do Docker: se requirements.txt não mudar, não reinstala
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Instala dependências do sistema necessárias
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copia todo o restante do seu código para o diretório de trabalho
+# Copia apenas os requirements primeiro para aproveitar cache Docker
+COPY backend/requirements.txt .
+
+# Instala dependências Python (inclui gunicorn e eventlet)
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir gunicorn==20.1.0 eventlet==0.33.3
+
+# Copia o restante da aplicação
 COPY . .
 
-# Define a porta que a aplicação vai escutar. O Railway vai injetar sua própria PORT,
-# mas 5000 é um bom valor padrão para desenvolvimento e para o comando CMD.
+# Variáveis de ambiente
+ENV FLASK_APP=backend.app
+ENV FLASK_ENV=production
 ENV PORT=5000
 EXPOSE $PORT
 
-# Comando para rodar a aplicação usando Gunicorn.
-# 'backend.app:app' significa: no módulo backend/app.py, encontre a instância 'app'.
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "backend.app:app"]
+# Comando de inicialização otimizado para SocketIO
+CMD ["gunicorn", 
+     "--worker-class", "eventlet",  # Critical for SocketIO
+     "--bind", "0.0.0.0:5000", 
+     "--timeout", "120", 
+     "--reload",  # Apenas para desenvolvimento, remova para produção
+     "--access-logfile", "-", 
+     "--error-logfile", "-", 
+     "backend.app:app"]
