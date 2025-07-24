@@ -1,245 +1,304 @@
-// frontend/script.js
+// ===== SISTEMA DE GERENCIAMENTO DE ESTADO =====
+const CosmicState = {
+    currentModule: 'dashboard',
+    pomodoroState: {
+        isRunning: false,
+        isPaused: true,
+        isFocusMode: true,
+        timeLeft: 25 * 60, // 25 minutos em segundos
+        totalTime: 25 * 60,
+        interval: null
+    }
+};
 
+// ===== INICIALIZAÇÃO DO SISTEMA =====
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Seletores de Elementos ---
-    const navItems = document.querySelectorAll('.bottom-nav .nav-item');
-    const contentSections = document.querySelectorAll('.content-section');
-    const appMainPanel = document.querySelector('.app-main-panel');
-    const backgroundGradientAnimated = document.querySelector('.background-gradient-animated'); // Para o fundo animado
+    initParticleSystem();
+    setupNavigation();
+    initPomodoroSystem();
+    setupThemeEngine();
+    
+    // Mostra o módulo ativo inicial
+    showModule(CosmicState.currentModule);
+});
 
-    // --- Mapeamento de Temas (Cores e Gradientes de Fundo) ---
-    // Estas cores serão aplicadas dinamicamente via variáveis CSS no app-main-panel
-    // E o gradiente de fundo no body também mudará
-    const sectionThemes = {
-        'dashboard': {
-            primary: '#00FFFF', secondary: '#00FF99', // Neon Blue, Neon Green
-            bgGradient: 'radial-gradient(circle at 10% 20%, #000428, #004e92)', // Azul Escuro Cósmico
-        },
-        'pomodoro': {
-            primary: '#FF8C00', secondary: '#FF00FF', // Neon Orange, Neon Pink
-            bgGradient: 'radial-gradient(circle at 90% 80%, #1A2980, #203A43)', // Roxos e Azuis Sombrios
-        },
-        'metas': {
-            primary: '#9900FF', secondary: '#FF00FF', // Neon Purple, Neon Pink
-            bgGradient: 'linear-gradient(135deg, #1C0F2B 0%, #3A0C4D 100%)', // Púrpura Profundo
-        },
-        'agenda': {
-            primary: '#ADD8E6', secondary: '#87CEFA', // Azul Claro
-            bgGradient: 'linear-gradient(135deg, #0F2027 0%, #203A43 50%, #2C5364 100%)', // Tons de Azul Oceano
-        },
-        'rotinas': {
-            primary: '#90EE90', secondary: '#32CD32', // Verde Vivo
-            bgGradient: 'linear-gradient(135deg, #0A2E0A 0%, #1E561E 100%)', // Verdes da Natureza Profunda
-        },
-        'relatorios': {
-            primary: '#D3D3D3', secondary: '#A9A9A9', // Cinza Metálico
-            bgGradient: 'linear-gradient(135deg, #1C1C1C 0%, #424242 100%)', // Cinza Técnico
-        },
-        'configuracoes': {
-            primary: '#FFA500', secondary: '#FFD700', // Dourado/Laranja
-            bgGradient: 'linear-gradient(135deg, #303030 0%, #505050 100%)', // Cinza Robusto
-        },
-    };
-
-    /**
-     * Alterna a visibilidade das seções, aplica o tema de cor e atualiza o fundo animado.
-     * @param {string} sectionId O ID da seção a ser exibida.
-     */
-    const showSection = (sectionId) => {
-        // Remove 'active' e adiciona 'hidden' a todas as seções para transição suave
-        contentSections.forEach(section => {
-            section.classList.remove('active');
-            section.classList.add('hidden');
+// ===== SISTEMA DE PARTÍCULAS =====
+function initParticleSystem() {
+    const canvas = document.getElementById('particle-canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Configura o canvas para ocupar toda a tela
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Configuração das partículas
+    const particles = [];
+    const particleCount = window.innerWidth < 768 ? 50 : 100;
+    
+    // Cria partículas
+    for (let i = 0; i < particleCount; i++) {
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 3 + 1,
+            speedX: (Math.random() - 0.5) * 0.5,
+            speedY: (Math.random() - 0.5) * 0.5,
+            color: `rgba(${Math.floor(Math.random() * 100 + 155)}, 
+                         ${Math.floor(Math.random() * 200 + 55)}, 
+                         255, 
+                         ${Math.random() * 0.5 + 0.1})`
         });
-
-        // Adiciona 'active' à seção desejada após um pequeno delay para a animação de saída
-        const targetSection = document.getElementById(sectionId);
-        if (targetSection) {
-            setTimeout(() => {
-                targetSection.classList.remove('hidden');
-                targetSection.classList.add('active'); // CSS fará o fade-in e slide-up
-            }, 50); // Pequeno delay para a animação da seção anterior
-        }
-
-        // Atualiza a classe 'active' na barra de navegação
-        navItems.forEach(item => {
-            item.classList.remove('active');
-            if (item.dataset.section === sectionId) {
-                item.classList.add('active');
-            }
+    }
+    
+    // Loop de animação
+    function animateParticles() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        particles.forEach(particle => {
+            // Atualiza posição
+            particle.x += particle.speedX;
+            particle.y += particle.speedY;
+            
+            // Mantém as partículas dentro da tela
+            if (particle.x < 0 || particle.x > canvas.width) particle.speedX *= -1;
+            if (particle.y < 0 || particle.y > canvas.height) particle.speedY *= -1;
+            
+            // Desenha a partícula
+            ctx.beginPath();
+            ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+            ctx.fillStyle = particle.color;
+            ctx.fill();
+            
+            // Efeito de brilho
+            ctx.beginPath();
+            ctx.arc(particle.x, particle.y, particle.size * 2, 0, Math.PI * 2);
+            ctx.fillStyle = particle.color.replace('rgba', 'rgba').replace(')', ', 0.1)');
+            ctx.fill();
         });
+        
+        requestAnimationFrame(animateParticles);
+    }
+    
+    animateParticles();
+}
 
-        // Aplica as variáveis CSS de cor do tema e muda o gradiente de fundo principal
-        const currentTheme = sectionThemes[sectionId];
-        if (currentTheme) {
-            appMainPanel.style.setProperty('--theme-primary', currentTheme.primary);
-            appMainPanel.style.setProperty('--theme-secondary', currentTheme.secondary);
-            // Define o background do gradiente animado
-            backgroundGradientAnimated.style.background = currentTheme.bgGradient;
-        }
-    };
-
-    // Adiciona event listeners aos itens da navegação
-    navItems.forEach(item => {
-        item.addEventListener('click', (e) => {
+// ===== SISTEMA DE NAVEGAÇÃO =====
+function setupNavigation() {
+    const navPortals = document.querySelectorAll('.nav-portal');
+    
+    navPortals.forEach(portal => {
+        portal.addEventListener('click', (e) => {
             e.preventDefault();
-            const sectionId = item.dataset.section;
-            showSection(sectionId);
+            const moduleId = portal.dataset.module;
+            showModule(moduleId);
         });
     });
+}
 
-    // --- Lógica do Pomodoro Aprimorada com SVG ---
-    const timerDisplay = document.querySelector('#pomodoro .time-value');
-    const timerStatus = document.querySelector('#pomodoro .timer-status');
-    const startButton = document.querySelector('#pomodoro .btn-start');
-    const pauseButton = document.querySelector('#pomodoro .btn-pause');
-    const resetButton = document.querySelector('#pomodoro .btn-reset');
-    const skipButton = document.querySelector('#pomodoro .btn-skip');
-    const timerCircleProgress = document.querySelector('.timer-circle-progress'); // O círculo de progresso SVG
-
-    let timerInterval; // Variável para o setInterval
-    let timeLeft; // Tempo restante em segundos
-    let isPaused = true;
-    let isFocusMode = true; // true para Foco, false para Descanso
-
-    // Duração dos ciclos em segundos
-    const FOCUS_TIME = 25 * 60; // 25 minutos
-    const SHORT_BREAK_TIME = 5 * 60; // 5 minutos
-    const LONG_BREAK_TIME = 15 * 60; // 15 minutos (para ciclos futuros)
-    let totalTimeForCurrentMode = FOCUS_TIME; // Tempo total para o modo atual
-
-    /**
-     * Atualiza o display do timer e o progresso do SVG.
-     */
-    function updateTimerDisplay() {
-        const minutes = Math.floor(timeLeft / 60);
-        const seconds = timeLeft % 60;
-        timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-
-        // Atualiza o círculo de progresso SVG
-        const radius = timerCircleProgress.r.baseVal.value;
-        const circumference = radius * 2 * Math.PI;
-        const offset = circumference - (timeLeft / totalTimeForCurrentMode) * circumference;
-
-        timerCircleProgress.style.strokeDasharray = `${circumference} ${circumference}`;
-        timerCircleProgress.style.strokeDashoffset = offset;
-
-        // Animação de brilho no texto do timer quando o tempo está acabando
-        if (timeLeft < 60 && timeLeft % 2 === 0 && !isPaused) { // Menos de 1 minuto
-             timerDisplay.classList.add('time-critical');
-        } else {
-             timerDisplay.classList.remove('time-critical');
+function showModule(moduleId) {
+    // Atualiza estado
+    CosmicState.currentModule = moduleId;
+    
+    // Atualiza navegação
+    document.querySelectorAll('.nav-portal').forEach(portal => {
+        portal.classList.remove('active');
+        if (portal.dataset.module === moduleId) {
+            portal.classList.add('active');
         }
+    });
+    
+    // Atualiza conteúdo
+    document.querySelectorAll('.content-module').forEach(module => {
+        module.classList.remove('active');
+        if (module.id === moduleId) {
+            setTimeout(() => {
+                module.classList.add('active');
+            }, 50);
+        }
+    });
+}
+
+// ===== SISTEMA DE TEMAS =====
+function setupThemeEngine() {
+    // Observa mudanças no módulo ativo para atualizar o tema
+    const observer = new MutationObserver(() => {
+        const activeModule = document.querySelector('.content-module.active');
+        if (activeModule) {
+            const theme = activeModule.dataset.theme;
+            updateTheme(theme);
+        }
+    });
+    
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+}
+
+function updateTheme(themeName) {
+    const nebulaLayer = document.querySelector('.nebula-layer');
+    
+    switch(themeName) {
+        case 'dashboard':
+            nebulaLayer.style.background = 'var(--theme-dashboard)';
+            break;
+        case 'pomodoro':
+            nebulaLayer.style.background = 'var(--theme-pomodoro)';
+            break;
+        case 'metas':
+            nebulaLayer.style.background = 'var(--theme-metas)';
+            break;
+        // Adicione outros temas conforme necessário
+        default:
+            nebulaLayer.style.background = 'var(--theme-dashboard)';
     }
+}
 
-    /**
-     * Inicia ou resume o timer.
-     */
-    function startTimer() {
-        if (!isPaused) return; // Só inicia se estiver pausado
-
-        isPaused = false;
-        timerStatus.textContent = isFocusMode ? 'Foco Ativo ⚡' : 'Pausa Ativa 🧘';
-        timerStatus.classList.add('pulsing-text'); // Ativa a animação de pulso no status
-
-        // Garante que o brilho do anel de progresso esteja ativo
-        timerCircleProgress.classList.add('active-glow');
-
-        timerInterval = setInterval(() => {
-            if (timeLeft <= 0) {
-                clearInterval(timerInterval);
-                isPaused = true;
-                timerStatus.classList.remove('pulsing-text'); // Desativa a animação de pulso
-
-                // Toca um som de notificação (você pode adicionar um elemento <audio> no HTML)
-                const audio = new Audio('path/to/your/notification.mp3'); // Mude o caminho
-                audio.play().catch(e => console.error("Erro ao tocar áudio:", e));
-
-                // Transição para o próximo modo
-                if (isFocusMode) {
-                    timeLeft = SHORT_BREAK_TIME;
-                    totalTimeForCurrentMode = SHORT_BREAK_TIME;
-                    isFocusMode = false;
-                    timerStatus.textContent = 'Pausa Iniciada 🎉';
-                } else {
-                    timeLeft = FOCUS_TIME;
-                    totalTimeForCurrentMode = FOCUS_TIME;
-                    isFocusMode = true;
-                    timerStatus.textContent = 'Foco Reiniciado 🚀';
-                }
-                updateTimerDisplay();
-                startTimer(); // Inicia o próximo ciclo automaticamente
-            } else {
-                timeLeft--;
-                updateTimerDisplay();
+// ===== SISTEMA POMODORO =====
+function initPomodoroSystem() {
+    // Elementos DOM
+    const timeDisplay = document.querySelector('.time-display');
+    const statusDisplay = document.querySelector('.chrono-status');
+    const startBtn = document.querySelector('.start-btn');
+    const pauseBtn = document.querySelector('.pause-btn');
+    const resetBtn = document.querySelector('.reset-btn');
+    const skipBtn = document.querySelector('.skip-btn');
+    const progressRing = document.querySelector('.ring-progress');
+    
+    // Configura o anel de progresso
+    const radius = progressRing.r.baseVal.value;
+    const circumference = radius * 2 * Math.PI;
+    progressRing.style.strokeDasharray = `${circumference} ${circumference}`;
+    progressRing.style.strokeDashoffset = circumference;
+    
+    // Atualiza o display
+    updatePomodoroDisplay();
+    
+    // Event Listeners
+    startBtn.addEventListener('click', startPomodoro);
+    pauseBtn.addEventListener('click', pausePomodoro);
+    resetBtn.addEventListener('click', resetPomodoro);
+    skipBtn.addEventListener('click', skipPomodoro);
+    
+    // Funções do Pomodoro
+    function startPomodoro() {
+        if (CosmicState.pomodoroState.isRunning) return;
+        
+        CosmicState.pomodoroState.isRunning = true;
+        CosmicState.pomodoroState.isPaused = false;
+        
+        statusDisplay.textContent = CosmicState.pomodoroState.isFocusMode 
+            ? 'Foco Ativo ⚡' 
+            : 'Pausa Ativa 🧘';
+        
+        CosmicState.pomodoroState.interval = setInterval(() => {
+            if (CosmicState.pomodoroState.timeLeft <= 0) {
+                completeCycle();
+                return;
             }
-        }, 1000); // Atualiza a cada segundo
+            
+            CosmicState.pomodoroState.timeLeft--;
+            updatePomodoroDisplay();
+            
+            // Ativa efeito crítico nos últimos 60 segundos
+            if (CosmicState.pomodoroState.timeLeft < 60) {
+                timeDisplay.classList.add('critical');
+            } else {
+                timeDisplay.classList.remove('critical');
+            }
+        }, 1000);
     }
-
-    /**
-     * Pausa o timer.
-     */
-    function pauseTimer() {
-        clearInterval(timerInterval);
-        isPaused = true;
-        timerStatus.textContent = isFocusMode ? 'Foco Pausado ⏸️' : 'Pausa Pausada 💤';
-        timerStatus.classList.remove('pulsing-text'); // Desativa a animação de pulso
-        timerCircleProgress.classList.remove('active-glow'); // Remove o brilho do anel
-        timerDisplay.classList.remove('time-critical'); // Remove brilho crítico do tempo
+    
+    function pausePomodoro() {
+        if (!CosmicState.pomodoroState.isRunning || CosmicState.pomodoroState.isPaused) return;
+        
+        clearInterval(CosmicState.pomodoroState.interval);
+        CosmicState.pomodoroState.isPaused = true;
+        CosmicState.pomodoroState.isRunning = false;
+        
+        statusDisplay.textContent = CosmicState.pomodoroState.isFocusMode 
+            ? 'Foco Pausado ⏸️' 
+            : 'Pausa Interrompida 💤';
     }
-
-    /**
-     * Redefine o timer para o início do modo de foco.
-     */
-    function resetTimer() {
-        clearInterval(timerInterval);
-        isPaused = true;
-        timeLeft = FOCUS_TIME;
-        totalTimeForCurrentMode = FOCUS_TIME;
-        isFocusMode = true;
-        updateTimerDisplay();
-        timerStatus.textContent = 'Pronto para Ativar';
-        timerStatus.classList.remove('pulsing-text');
-        timerCircleProgress.classList.remove('active-glow');
-        timerDisplay.classList.remove('time-critical');
+    
+    function resetPomodoro() {
+        clearInterval(CosmicState.pomodoroState.interval);
+        
+        CosmicState.pomodoroState.isRunning = false;
+        CosmicState.pomodoroState.isPaused = true;
+        CosmicState.pomodoroState.isFocusMode = true;
+        CosmicState.pomodoroState.timeLeft = 25 * 60;
+        CosmicState.pomodoroState.totalTime = 25 * 60;
+        
+        statusDisplay.textContent = 'Pronto para Ativar';
+        timeDisplay.classList.remove('critical');
+        updatePomodoroDisplay();
     }
-
-    /**
-     * Pula para o próximo modo (foco ou descanso).
-     */
-    function skipTimer() {
-        clearInterval(timerInterval);
-        isPaused = true;
-        timerStatus.classList.remove('pulsing-text');
-        timerCircleProgress.classList.remove('active-glow');
-        timerDisplay.classList.remove('time-critical');
-
-        if (isFocusMode) {
-            timeLeft = SHORT_BREAK_TIME;
-            totalTimeForCurrentMode = SHORT_BREAK_TIME;
-            isFocusMode = false;
-            timerStatus.textContent = 'Pausa Forçada ⏭️';
+    
+    function skipPomodoro() {
+        clearInterval(CosmicState.pomodoroState.interval);
+        
+        CosmicState.pomodoroState.isRunning = false;
+        CosmicState.pomodoroState.isPaused = true;
+        
+        if (CosmicState.pomodoroState.isFocusMode) {
+            CosmicState.pomodoroState.isFocusMode = false;
+            CosmicState.pomodoroState.timeLeft = 5 * 60;
+            CosmicState.pomodoroState.totalTime = 5 * 60;
+            statusDisplay.textContent = 'Pausa Forçada ⏭️';
         } else {
-            timeLeft = FOCUS_TIME;
-            totalTimeForCurrentMode = FOCUS_TIME;
-            isFocusMode = true;
-            timerStatus.textContent = 'Retomando Foco 🚀';
+            CosmicState.pomodoroState.isFocusMode = true;
+            CosmicState.pomodoroState.timeLeft = 25 * 60;
+            CosmicState.pomodoroState.totalTime = 25 * 60;
+            statusDisplay.textContent = 'Retomando Foco 🚀';
         }
-        updateTimerDisplay();
-        startTimer(); // Inicia o próximo ciclo automaticamente
+        
+        timeDisplay.classList.remove('critical');
+        updatePomodoroDisplay();
     }
-
-    // Adiciona event listeners aos botões do Pomodoro
-    if (startButton) startButton.addEventListener('click', startTimer);
-    if (pauseButton) pauseButton.addEventListener('click', pauseTimer);
-    if (resetButton) resetButton.addEventListener('click', resetTimer);
-    if (skipButton) skipButton.addEventListener('click', skipTimer);
-
-    // --- Inicialização ---
-    // Define o tempo inicial para o Pomodoro e atualiza o display
-    timeLeft = FOCUS_TIME;
-    updateTimerDisplay();
-
-    // Exibe a seção Dashboard por padrão ao carregar a página
-    showSection('dashboard');
-});
+    
+    function completeCycle() {
+        clearInterval(CosmicState.pomodoroState.interval);
+        
+        // Toca o som de alerta
+        const alertSound = document.getElementById('alert-sound');
+        alertSound.play().catch(e => console.error("Erro ao tocar áudio:", e));
+        
+        if (CosmicState.pomodoroState.isFocusMode) {
+            // Terminou o tempo de foco, inicia pausa curta
+            CosmicState.pomodoroState.isFocusMode = false;
+            CosmicState.pomodoroState.timeLeft = 5 * 60;
+            CosmicState.pomodoroState.totalTime = 5 * 60;
+            statusDisplay.textContent = 'Pausa Iniciada 🎉';
+        } else {
+            // Terminou a pausa, reinicia o foco
+            CosmicState.pomodoroState.isFocusMode = true;
+            CosmicState.pomodoroState.timeLeft = 25 * 60;
+            CosmicState.pomodoroState.totalTime = 25 * 60;
+            statusDisplay.textContent = 'Foco Reiniciado 🚀';
+        }
+        
+        CosmicState.pomodoroState.isRunning = false;
+        CosmicState.pomodoroState.isPaused = true;
+        timeDisplay.classList.remove('critical');
+        updatePomodoroDisplay();
+        
+        // Reinicia automaticamente após 2 segundos
+        setTimeout(startPomodoro, 2000);
+    }
+    
+    function updatePomodoroDisplay() {
+        const minutes = Math.floor(CosmicState.pomodoroState.timeLeft / 60);
+        const seconds = CosmicState.pomodoroState.timeLeft % 60;
+        timeDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Atualiza o anel de progresso
+        const offset = circumference - (CosmicState.pomodoroState.timeLeft / CosmicState.pomodoroState.totalTime) * circumference;
+        progressRing.style.strokeDashoffset = offset;
+    }
+}
