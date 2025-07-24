@@ -325,20 +325,20 @@ def pausar_pomodoro(session_id):
         logger.exception("Erro em pausar_pomodoro")
         return jsonify({"error": "Falha ao pausar sessão Pomodoro"}), 500
 
-# --- Execução Principal ---
+# --- Execução Universal ---
+def create_eventlet_server():
+    import eventlet
+    from eventlet import wsgi
+    logger.info(f"Iniciando servidor Eventlet na porta {port}")
+    wsgi.server(eventlet.listen(('0.0.0.0', port)), app)
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     
-    if os.environ.get('DATABASE_URL'):
-        # Execução em produção
-        socketio.run(
-            app,
-            host='0.0.0.0',
-            port=port,
-            debug=debug_mode,
-            use_reloader=False
-        )
+    # Verifica se está sendo executado com Eventlet
+    if 'eventlet' in sys.modules:
+        create_eventlet_server()
     else:
-        # Execução em desenvolvimento
-        app.run(host='0.0.0.0', port=port, debug=debug_mode)
+        logger.info("Iniciando com Flask dev server")
+        socketio.run(app, host='0.0.0.0', port=port, debug=debug_mode, use_reloader=False)
