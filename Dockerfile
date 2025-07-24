@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
     default-libmysqlclient-dev \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copia e instala requirements
@@ -25,5 +24,5 @@ ENV FLASK_ENV=production
 ENV PORT=5000
 EXPOSE $PORT
 
-# Comando de execução corrigido e otimizado
-CMD ["python", "-m", "eventlet", "backend/app.py"]
+# COMANDO CORRETO E DEFINITIVO:
+CMD ["python", "backend/app.py"]
