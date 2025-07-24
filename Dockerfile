@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
     default-libmysqlclient-dev \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copia e instala requirements
@@ -19,10 +20,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . .
 
 # Configurações de ambiente
-ENV FLASK_APP=app.py
+ENV FLASK_APP=backend.app
 ENV FLASK_ENV=production
 ENV PORT=5000
 EXPOSE $PORT
 
-# SOLUÇÃO DEFINITIVA: Execute com o Eventlet diretamente
-CMD ["python", "-m", "eventlet", "--nopatch", "app.py", "0.0.0.0", "5000"]
+# Comando de execução corrigido e otimizado
+CMD ["python", "-m", "eventlet", "backend/app.py"]
