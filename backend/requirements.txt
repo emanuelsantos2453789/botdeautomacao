@@ -3,9 +3,8 @@ Flask-SocketIO==5.3.4
 Flask-CORS==3.0.10
 Flask-SQLAlchemy==3.0.3
 gunicorn==20.1.0
-eventlet==0.33.3
+eventlet==0.31.0  # VERSÃO COMPATÍVEL COM O GUNICORN 20.x
 python-dotenv==1.0.0
 pytz==2023.3
 PyMySQL==1.0.2
-greenlet==2.0.2  # ESSENCIAL para eventlet
-sqlalchemy==1.4.46  # Compatibilidade com Flask-SQLAlchemy
+greenlet==1.1.3   # VERSÃO COMPATÍVEL COM EVENTLET 0.31
