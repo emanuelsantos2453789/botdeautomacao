@@ -1,13 +1,14 @@
-# backend/app.py
-from flask import Flask, jsonify, request, send_from_directory
-from flask_cors import CORS
 import os
 import logging
 import sys
 from datetime import datetime
+import pytz
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+from flask_socketio import SocketIO
 from models import db, init_app as init_db, User, Evento, Meta, Rotina, Pomodoro
 from ws_manager import init_ws_events
-import pytz
 
 # Configuração avançada de logging
 logging.basicConfig(
@@ -15,8 +16,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('app.log'),
-        logging.handlers.RotatingFileHandler('app_debug.log', maxBytes=1000000, backupCount=5)
+        logging.FileHandler('app.log')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -36,8 +36,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 init_db(app)
 
-# Importar após inicializar db para evitar circular imports
-from flask_socketio import SocketIO
+# Inicialização do SocketIO
 socketio = SocketIO(app, cors_allowed_origins="*", logger=True, engineio_logger=True)
 init_ws_events(socketio, app)
 
@@ -47,7 +46,7 @@ def bad_request(e):
     logger.warning(f'Bad Request: {str(e)}')
     return jsonify({
         "error": "Requisição inválida",
-        "message": str(e.description)
+        "message": str(e.description) if hasattr(e, 'description') else str(e)
     }), 400
 
 @app.errorhandler(401)
@@ -90,7 +89,7 @@ def authenticate_request():
         if not auth_token:
             return jsonify({"error": "Token de autenticação ausente"}), 401
         
-        user = User.query.filter_by(id=auth_token).first()
+        user = User.query.get(auth_token)
         if not user:
             return jsonify({"error": "Token inválido"}), 401
         
@@ -105,7 +104,11 @@ def serve_index():
 # --- API Endpoints ---
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    db_status = "ok" if db.session.query(1).first() else "unavailable"
+    try:
+        db_status = "ok" if db.session.execute("SELECT 1").first() else "unavailable"
+    except Exception:
+        db_status = "unavailable"
+        
     return jsonify({
         "status": "online",
         "timestamp": datetime.now(pytz.timezone('America/Sao_Paulo')).isoformat(),
@@ -325,15 +328,16 @@ def pausar_pomodoro(session_id):
         logger.exception("Erro em pausar_pomodoro")
         return jsonify({"error": "Falha ao pausar sessão Pomodoro"}), 500
 
-# --- Execução para Produção ---
-port = int(os.environ.get("PORT", 5000))
-
+# --- Execução Universal ---
 if __name__ == '__main__':
-    # Verifica se está em ambiente de produção
-    if os.environ.get('FLASK_ENV') == 'production':
-        # Usa Eventlet diretamente para produção
+    port = int(os.environ.get("PORT", 5000))
+    
+    try:
+        # Tenta usar Eventlet se disponível
         import eventlet
-        eventlet.wsgi.server(eventlet.listen(('0.0.0.0', port)), app)
-    else:
-        # Modo desenvolvimento
-        socketio.run(app, host='0.0.0.0', port=port, debug=True)
+        from eventlet import wsgi
+        logger.info(f"Iniciando servidor Eventlet na porta {port}")
+        wsgi.server(eventlet.listen(('0.0.0.0', port)), app)
+    except ImportError:
+        logger.info("Eventlet não disponível, usando servidor Flask")
+        socketio.run(app, host='0.0.0.0', port=port, debug=False)
