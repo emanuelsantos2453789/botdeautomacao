@@ -1,28 +1,19 @@
-# backend/ws_manager.py
-import json
-from flask_socketio import SocketIO, emit, join_room, leave_room
-from .models import db, Evento, Pomodoro, User
 import time
-from datetime import datetime
 from threading import Lock
+from flask import request
+from flask_socketio import SocketIO, emit, join_room, leave_room
+from models import db, Evento, Pomodoro, User
 
-# Configuração do SocketIO
+# Variáveis globais
 socketio = None
-timer_thread = None
-thread_lock = Lock()
 active_sessions = {}
+active_timers = {}
+thread_lock = Lock()
 
-def init_ws_manager(app):
+def init_ws_events(sio, app):
     global socketio
-    socketio = SocketIO(app, 
-                       cors_allowed_origins="*", 
-                       logger=True, 
-                       engineio_logger=True,
-                       async_mode='eventlet')
-    register_events()
-    return socketio
+    socketio = sio
 
-def register_events():
     @socketio.on('connect')
     def handle_connect():
         print(f'Cliente conectado: {request.sid}')
@@ -37,7 +28,6 @@ def register_events():
     @socketio.on('authenticate')
     def handle_authentication(data):
         token = data.get('token')
-        # Validação do token (simplificado)
         user = User.query.filter_by(id=token).first()
         if user:
             active_sessions[user.id] = request.sid
@@ -87,7 +77,7 @@ def register_events():
         
         db.session.commit()
         emit('pomodoro_started', pomodoro.to_dict(), room=user_id)
-        start_pomodoro_timer(user_id, pomodoro.id)
+        start_pomodoro_timer(app, user_id, pomodoro.id)
 
     @socketio.on('pause_pomodoro')
     def handle_pause_pomodoro(data):
@@ -98,10 +88,8 @@ def register_events():
             db.session.commit()
             emit('pomodoro_paused', pomodoro.to_dict(), room=user_id)
 
-    # Outros eventos podem ser adicionados aqui...
-
 # Sistema de temporizador em segundo plano
-def start_pomodoro_timer(user_id, pomodoro_id):
+def start_pomodoro_timer(app, user_id, pomodoro_id):
     def pomodoro_timer():
         with app.app_context():
             while True:
@@ -138,6 +126,3 @@ def notify_user(user_id, event, data):
 
 def broadcast_event(event, data):
     emit(event, data, broadcast=True)
-
-# Dicionário para controlar timers ativos
-active_timers = {}
