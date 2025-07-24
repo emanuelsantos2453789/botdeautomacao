@@ -5,8 +5,8 @@ import os
 import logging
 import sys
 from datetime import datetime
-from .models import db, init_app as init_db, User, Evento, Meta, Rotina, Pomodoro
-from .ws_manager import init_ws_events
+from models import db, init_app as init_db, User, Evento, Meta, Rotina, Pomodoro
+from ws_manager import init_ws_events
 import pytz
 
 # Configuração avançada de logging
