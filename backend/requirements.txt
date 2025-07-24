@@ -7,4 +7,5 @@ eventlet==0.33.3
 python-dotenv==1.0.0
 pytz==2023.3
 PyMySQL==1.0.2
-greenlet==2.0.2  # Importante para eventlet
+greenlet==2.0.2  # ESSENCIAL para eventlet
+sqlalchemy==1.4.46  # Compatibilidade com Flask-SQLAlchemy
