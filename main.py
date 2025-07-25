@@ -18,7 +18,7 @@ MAIN_MENU, AGENDA_MENU, POMODORO_MENU = range(3)
 
 # Carregar variáveis de ambiente
 load_dotenv()
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+TOKEN = os.getenv('BOT_TOKEN')
 
 async def start(update, context):
     """Inicia a conversa e mostra o menu principal"""
