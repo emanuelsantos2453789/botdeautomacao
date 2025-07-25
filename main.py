@@ -1,138 +1,124 @@
-import asyncio
+# main.py
 import logging
 import os
-from dotenv import load_dotenv
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler
-from agenda import AgendaManager
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+    PicklePersistence
+)
+
+# Importar os módulos das funcionalidades
+from agenda import AgendaManager, start_all_scheduled_jobs
 from pomodoro import Pomodoro
 
-# Configuração básica de logging
+# Configuração de logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Estados da conversa principal
-MAIN_MENU, AGENDA_MENU, POMODORO_MENU = range(3)
+# Estados do menu principal
+MAIN_MENU = 0
 
-# Carregar variáveis de ambiente
-load_dotenv()
-TOKEN = os.getenv('BOT_TOKEN')
-
-async def start(update, context):
-    """Inicia a conversa e mostra o menu principal"""
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Inicia o bot e mostra o menu principal."""
     keyboard = [
-        [InlineKeyboardButton("📅 Agenda", callback_data="open_agenda_menu")],
-        [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
+        [
+            InlineKeyboardButton("🗓️ Rotinas Semanais", callback_data="open_rotinas_semanais_menu"),
+            InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")
+        ],
+        [
+            InlineKeyboardButton("📝 Tarefas Avulsas", callback_data="open_tasks_menu"),
+            InlineKeyboardButton("⚙️ Configurações", callback_data="open_settings_menu")
+        ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
-        "🌟 *Bem-vindo ao seu Assistente de Produtividade!* 🌟\n\n"
-        "Como posso te ajudar hoje? Escolha uma opção: 👇",
-        parse_mode='Markdown',
-        reply_markup=reply_markup
-    )
+    if update.message:
+        await update.message.reply_text(
+            "🌟 *Bem-vindo ao seu Assistente de Produtividade!* 🌟\n"
+            "Escolha uma das opções abaixo para começar:",
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    else:
+        await update.callback_query.edit_message_text(
+            "🌟 *Menu Principal* 🌟\nEscolha uma opção:",
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
     return MAIN_MENU
 
-async def main_menu(update, context):
-    """Retorna ao menu principal"""
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [
-        [InlineKeyboardButton("📅 Agenda", callback_data="open_agenda_menu")],
-        [InlineKeyboardButton("🍅 Pomodoro", callback_data="open_pomodoro_menu")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "🌟 *Menu Principal* 🌟\nEscolha uma opção:",
-        parse_mode='Markdown',
-        reply_markup=reply_markup
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Mostra a mensagem de ajuda."""
+    help_text = (
+        "🛠️ *Ajuda do Assistente de Produtividade*\n\n"
+        "Eu posso te ajudar a organizar sua rotina e melhorar sua produtividade! "
+        "Aqui estão os principais comandos:\n\n"
+        "• /start - Mostra o menu principal\n"
+        "• /ajuda - Exibe esta mensagem de ajuda\n\n"
+        "Principais funcionalidades:\n"
+        "🍅 *Pomodoro* - Técnica de gestão de tempo com períodos de foco e descanso\n"
+        "🗓️ *Rotinas Semanais* - Agenda suas atividades recorrentes\n"
+        "📝 *Tarefas Avulsas* - Lembretes para atividades pontuais\n\n"
+        "Experimente clicar nos botões do menu para começar!"
     )
-    return MAIN_MENU
+    await update.message.reply_text(help_text, parse_mode='Markdown')
 
-async def agenda_menu(update, context):
-    """Menu da Agenda"""
+async def main_menu_return(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Volta ao menu principal."""
     query = update.callback_query
     await query.answer()
-    
-    keyboard = [
-        [InlineKeyboardButton("🗓️ Rotinas Semanais", callback_data="open_rotinas_semanais_menu")],
-        [InlineKeyboardButton("📝 Tarefas Avulsas", callback_data="open_tasks_menu")],
-        [InlineKeyboardButton("⬅️ Voltar", callback_data="main_menu")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "📅 *Menu da Agenda*: organize seu tempo e tarefas!",
-        parse_mode='Markdown',
-        reply_markup=reply_markup
-    )
-    return AGENDA_MENU
+    return await start(update, context)
 
-async def pomodoro_menu(update, context):
-    """Menu do Pomodoro"""
-    query = update.callback_query
-    await query.answer()
-    
-    # Inicializa a instância do Pomodoro se não existir
-    if 'pomodoro_instance' not in context.user_data:
-        context.user_data['pomodoro_instance'] = Pomodoro()
-    
-    pomodoro_instance = context.user_data['pomodoro_instance']
-    return await pomodoro_instance._show_pomodoro_menu(update, context)
+async def post_init(application: Application) -> None:
+    """Executa após a inicialização da aplicação."""
+    await start_all_scheduled_jobs(application)
+    logger.info("Agendamentos de rotinas iniciados")
 
-async def end(update, context):
-    """Encerra a conversa"""
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text("Até logo! 👋")
-    return ConversationHandler.END
+def main() -> None:
+    """Inicia o bot."""
+    # Configurar token (use variável de ambiente para segurança)
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise ValueError("Por favor, defina a variável de ambiente TELEGRAM_BOT_TOKEN")
 
-def main():
-    # Criar a aplicação do Telegram
-    application = Application.builder().token(TOKEN).build()
+    # Configurar persistência de dados
+    persistence = PicklePersistence(filepath="bot_persistence")
     
-    # Inicializar os módulos
+    # Criar aplicação
+    application = Application.builder().token(token).persistence(persistence).post_init(post_init).build()
+
+    # Inicializar managers
     agenda_manager = AgendaManager(application)
-    pomodoro = Pomodoro()
-    
-    # Obter os handlers de conversa
+    pomodoro_manager = Pomodoro()
+
+    # Obter handlers
     agenda_handler = agenda_manager.get_agenda_conversation_handler()
-    pomodoro_handler = pomodoro.get_pomodoro_conversation_handler()
+    pomodoro_handler = pomodoro_manager.get_pomodoro_conversation_handler()
+
+    # Configurar handlers principais
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("ajuda", help_command))
+    application.add_handler(CommandHandler("help", help_command))
     
-    # Configurar o ConversationHandler principal
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            MAIN_MENU: [
-                CallbackQueryHandler(agenda_menu, pattern='^open_agenda_menu$'),
-                CallbackQueryHandler(pomodoro_menu, pattern='^open_pomodoro_menu$'),
-                CallbackQueryHandler(end, pattern='^end$'),
-            ],
-            AGENDA_MENU: [
-                agenda_handler,
-                CallbackQueryHandler(main_menu, pattern='^main_menu$'),
-            ],
-            POMODORO_MENU: [
-                pomodoro_handler,
-                CallbackQueryHandler(main_menu, pattern='^main_menu$'),
-            ],
-        },
-        fallbacks=[CallbackQueryHandler(end, pattern='^end$')],
-    )
+    # Handler para retornar ao menu principal
+    application.add_handler(CallbackQueryHandler(main_menu_return, pattern="^main_menu_return$"))
     
-    application.add_handler(conv_handler)
-    
-    # Iniciar o scheduler para rotinas
-    scheduler = AsyncIOScheduler()
-    scheduler.start()
-    
-    logger.info("Bot iniciado. Pressione Ctrl+C para parar.")
+    # Adicionar handlers específicos
+    application.add_handler(agenda_handler)
+    application.add_handler(pomodoro_handler)
+
+    # Iniciar o bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
