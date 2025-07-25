@@ -5,7 +5,157 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OrganizaAção 🚀✨ - Painel Cósmico de Produtividade</title>
     
-    <link rel="stylesheet" href="style.css">
+    <style>
+        /* ===== NÚCLEO IMUTÁVEL ===== */
+        :root {
+            /* Cores Base */
+            --cosmic-dark: #0a0a15;
+            --void-black: #050510;
+            --starlight: #ECF0F1;
+            --neutron-gray: #BDC3C7;
+            
+            /* Cores de Energia */
+            --quantum-blue: #00FFFF;
+            --pulsar-green: #00FF99;
+            --nebula-purple: #9900FF;
+            --supernova-pink: #FF00FF;
+            --fusion-orange: #FF8C00;
+            
+            /* Efeitos Luminosos */
+            --glow-intensity: 0.8;
+            --deep-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+            --energy-glow-blue: 0 0 15px var(--quantum-blue), 
+                                0 0 30px rgba(0, 255, 255, 0.3);
+            --energy-glow-orange: 0 0 15px var(--fusion-orange), 
+                                  0 0 30px rgba(255, 140, 0, 0.3);
+            
+            /* Tempos de Transição */
+            --warp-speed: 0.3s;
+            --hyperspace-jump: 0.6s;
+            
+            /* Gradientes Temáticos */
+            --theme-dashboard: radial-gradient(circle at 10% 20%, #000428, #004e92);
+            --theme-pomodoro: radial-gradient(circle at 90% 80%, #1A2980, #203A43);
+            --theme-metas: linear-gradient(135deg, #1C0F2B 0%, #3A0C4D 100%);
+        }
+
+        /* ===== ESTRUTURA PRINCIPAL ===== */
+        .cosmic-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -3;
+        }
+        
+        .cosmic-panel {
+            width: 95%;
+            max-width: 1200px;
+            min-height: 85vh;
+            background: rgba(15, 15, 25, 0.6);
+            backdrop-filter: blur(25px) saturate(180%);
+            -webkit-backdrop-filter: blur(25px) saturate(180%);
+            border: 1px solid rgba(80, 80, 120, 0.3);
+            border-radius: 25px;
+            box-shadow: var(--deep-shadow), var(--energy-glow-blue);
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+            position: relative;
+            overflow: hidden;
+            z-index: 10;
+        }
+        
+        .panel-header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+        
+        .content-hub {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 0.5rem 1rem 0;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+        
+        .content-module {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding: 1rem 1.5rem;
+            opacity: 0;
+            transform: translateY(30px);
+            pointer-events: none;
+            transition: 
+                opacity var(--hyperspace-jump) ease, 
+                transform var(--hyperspace-jump) ease;
+        }
+        
+        .content-module.active {
+            position: relative;
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: all;
+        }
+        
+        .stellar-nav {
+            position: sticky;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 600px;
+            background: rgba(20, 20, 35, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(80, 80, 120, 0.3);
+            border-radius: 50px;
+            box-shadow: var(--deep-shadow);
+            padding: 0.8rem;
+            z-index: 100;
+            margin-top: auto;
+        }
+        
+        /* ===== MÓDULOS EXPANSÍVEIS ===== */
+        /* (Adicione novos módulos abaixo desta linha) */
+        
+        /* Módulo Dashboard */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .data-widget {
+            background: rgba(30, 30, 45, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 18px;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* Módulo Pomodoro */
+        .temporal-interface {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        
+        /* Adicione novos estilos de módulos aqui */
+    </style>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +176,6 @@
 
     <!-- Painel principal -->
     <div class="cosmic-panel">
-        <!-- Cabeçalho -->
         <header class="panel-header">
             <h1 class="app-title">
                 <span class="title-glow">Organiza</span><span class="title-pulse">Ação</span>
@@ -35,110 +184,18 @@
             <p class="app-slogan">Sua Central de Comando Intergaláctica</p>
         </header>
 
-        <!-- Área de conteúdo -->
         <main class="content-hub">
-            <!-- Dashboard -->
             <section id="dashboard" class="content-module active" data-theme="dashboard">
-                <div class="module-header">
-                    <h2 class="module-title">Dashboard <span class="module-icon">📊</span></h2>
-                    <p class="module-description">Painel de controle da sua jornada cósmica</p>
-                </div>
-                
-                <div class="dashboard-grid">
-                    <div class="data-widget focus-widget">
-                        <div class="widget-icon">⏱️</div>
-                        <h3>Foco Quântico</h3>
-                        <p class="widget-status">Estado: <span class="status-active">Pronto para ativar</span></p>
-                        <button class="action-btn primary">Iniciar Sequência</button>
-                    </div>
-                    
-                    <div class="data-widget goals-widget">
-                        <div class="widget-icon">🎯</div>
-                        <h3>Constelação de Metas</h3>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: 70%"></div>
-                        </div>
-                        <p class="progress-text">70% Concluído</p>
-                        <button class="action-btn secondary">Explorar Galáxia</button>
-                    </div>
-                    
-                    <div class="data-widget quick-add-widget">
-                        <div class="widget-icon">➕</div>
-                        <h3>Adicionar Rápido</h3>
-                        <p>Crie tarefas, eventos ou lembretes instantaneamente</p>
-                        <button class="action-btn accent">Criação Instantânea</button>
-                    </div>
-                </div>
+                <!-- Conteúdo do Dashboard -->
             </section>
-
-            <!-- Pomodoro -->
+            
             <section id="pomodoro" class="content-module" data-theme="pomodoro">
-                <div class="module-header">
-                    <h2 class="module-title">Foco Temporal <span class="module-icon">🍅</span></h2>
-                    <p class="module-description">Propulsor de concentração cósmica</p>
-                </div>
-                
-                <div class="temporal-interface">
-                    <div class="chrono-display">
-                        <svg class="chrono-ring" viewBox="0 0 100 100">
-                            <defs>
-                                <linearGradient id="pomodoro-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                                    <stop offset="0%" stop-color="var(--neon-orange)" />
-                                    <stop offset="100%" stop-color="var(--neon-pink)" />
-                                </linearGradient>
-                            </defs>
-                            <circle class="ring-back" cx="50" cy="50" r="45"></circle>
-                            <circle class="ring-progress" cx="50" cy="50" r="45"></circle>
-                        </svg>
-                        <div class="time-display">25:00</div>
-                    </div>
-                    
-                    <div class="chrono-status">Sistema de foco pronto</div>
-                    
-                    <div class="chrono-controls">
-                        <button class="control-btn start-btn">
-                            <span class="material-icons-round">play_arrow</span>
-                            Iniciar
-                        </button>
-                        <button class="control-btn pause-btn">
-                            <span class="material-icons-round">pause</span>
-                            Pausar
-                        </button>
-                        <button class="control-btn reset-btn">
-                            <span class="material-icons-round">replay</span>
-                            Resetar
-                        </button>
-                        <button class="control-btn skip-btn">
-                            <span class="material-icons-round">skip_next</span>
-                            Pular
-                        </button>
-                    </div>
-                </div>
+                <!-- Conteúdo do Pomodoro -->
             </section>
             
-            <!-- Outras seções (simplificadas para exemplo) -->
-            <section id="metas" class="content-module" data-theme="metas">
-                <!-- Conteúdo das metas -->
-            </section>
-            
-            <section id="agenda" class="content-module" data-theme="agenda">
-                <!-- Conteúdo da agenda -->
-            </section>
-            
-            <section id="rotinas" class="content-module" data-theme="rotinas">
-                <!-- Conteúdo das rotinas -->
-            </section>
-            
-            <section id="relatorios" class="content-module" data-theme="relatorios">
-                <!-- Conteúdo dos relatórios -->
-            </section>
-            
-            <section id="configuracoes" class="content-module" data-theme="configuracoes">
-                <!-- Conteúdo das configurações -->
-            </section>
+            <!-- Adicione novas seções aqui -->
         </main>
 
-        <!-- Navegação -->
         <nav class="stellar-nav">
             <ul class="nav-orbits">
                 <li class="nav-orbit">
@@ -153,34 +210,106 @@
                         <span class="nav-label">Foco</span>
                     </a>
                 </li>
-                <li class="nav-orbit">
-                    <a href="#metas" class="nav-portal" data-module="metas">
-                        <span class="nav-icon material-icons-round">flag</span>
-                        <span class="nav-label">Metas</span>
-                    </a>
-                </li>
-                <li class="nav-orbit">
-                    <a href="#agenda" class="nav-portal" data-module="agenda">
-                        <span class="nav-icon material-icons-round">event</span>
-                        <span class="nav-label">Agenda</span>
-                    </a>
-                </li>
-                <li class="nav-orbit">
-                    <a href="#rotinas" class="nav-portal" data-module="rotinas">
-                        <span class="nav-icon material-icons-round">loop</span>
-                        <span class="nav-label">Rotinas</span>
-                    </a>
-                </li>
+                <!-- Adicione novos itens de navegação aqui -->
             </ul>
         </nav>
     </div>
 
-    <!-- Efeito de partículas -->
     <canvas id="particle-canvas"></canvas>
-    
-    <!-- Sistema de áudio -->
     <audio id="alert-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3"></audio>
 
-    <script src="script.js"></script>
+    <script>
+        /* ===== NÚCLEO DO SISTEMA (IMUTÁVEL) ===== */
+        const CosmicSystem = {
+            modules: {},
+            state: {
+                currentModule: 'dashboard',
+                pomodoroState: {
+                    isRunning: false,
+                    isPaused: true,
+                    isFocusMode: true,
+                    timeLeft: 25 * 60,
+                    totalTime: 25 * 60,
+                    interval: null
+                }
+            },
+            
+            // Registra um novo módulo
+            registerModule: function(name, module) {
+                this.modules[name] = module;
+                if (module.init) module.init();
+            },
+            
+            // Inicializa o sistema
+            init: function() {
+                this.initParticleSystem();
+                this.setupNavigation();
+                this.setupThemeEngine();
+                
+                // Inicializa módulos registrados
+                for (const moduleName in this.modules) {
+                    if (this.modules[moduleName].init) {
+                        this.modules[moduleName].init();
+                    }
+                }
+                
+                this.showModule(this.state.currentModule);
+            },
+            
+            // Funções principais (não alterar)
+            initParticleSystem: function() {
+                // Implementação do sistema de partículas
+            },
+            
+            setupNavigation: function() {
+                // Implementação da navegação
+            },
+            
+            setupThemeEngine: function() {
+                // Implementação do sistema de temas
+            },
+            
+            showModule: function(moduleId) {
+                // Implementação para mostrar módulos
+            }
+        };
+
+        /* ===== MÓDULOS EXPANSÍVEIS ===== */
+        // Módulo Dashboard
+        CosmicSystem.registerModule('dashboard', {
+            init: function() {
+                console.log('Módulo Dashboard inicializado');
+                // Implementação específica do dashboard
+            },
+            
+            customMethod: function() {
+                // Método personalizado para este módulo
+            }
+        });
+
+        // Módulo Pomodoro
+        CosmicSystem.registerModule('pomodoro', {
+            init: function() {
+                console.log('Módulo Pomodoro inicializado');
+                this.initPomodoroSystem();
+            },
+            
+            initPomodoroSystem: function() {
+                // Implementação específica do Pomodoro
+            },
+            
+            startPomodoro: function() {
+                // Método para iniciar o Pomodoro
+            }
+        });
+
+        // Adicione novos módulos aqui:
+        // CosmicSystem.registerModule('novoModulo', { ... });
+
+        // ===== INICIALIZAÇÃO DO SISTEMA =====
+        document.addEventListener('DOMContentLoaded', () => {
+            CosmicSystem.init();
+        });
+    </script>
 </body>
 </html>
