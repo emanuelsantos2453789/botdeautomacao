@@ -87,7 +87,7 @@ async def post_init(application: Application) -> None:
 def main() -> None:
     """Inicia o bot."""
     # Configurar token (use variável de ambiente para segurança)
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    token = os.getenv("BOT_TOKEN")
     if not token:
         raise ValueError("Por favor, defina a variável de ambiente TELEGRAM_BOT_TOKEN")
 
