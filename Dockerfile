@@ -1,4 +1,3 @@
-# backend/Dockerfile
 FROM python:3.9-slim
 
 WORKDIR /app
@@ -19,10 +18,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . .
 
 # Configurações de ambiente
-ENV FLASK_APP=backend.app
 ENV FLASK_ENV=production
 ENV PORT=5000
 EXPOSE $PORT
 
-# COMANDO CORRETO E DEFINITIVO:
-CMD ["python", "backend/app.py"]
+# Comando de execução simplificado
+WORKDIR /app/backend
+CMD ["python", "app.py"]
